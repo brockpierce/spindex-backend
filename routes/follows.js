@@ -25,8 +25,14 @@ router.post("/:userId", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
-// DELETE /api/follows/:userId  -- unfollow
+// DELETE /api/follows/:userId  -- unfollow (blocked for locked follows)
 router.delete("/:userId", requireAuth, async (req, res) => {
+  const follow = await prisma.follow.findUnique({
+    where: { followerId_followedId: { followerId: req.session.userId, followedId: req.params.userId } },
+  });
+  if (follow?.locked) {
+    return res.status(403).json({ error: "You cannot unfollow this account." });
+  }
   await prisma.follow.deleteMany({ where: { followerId: req.session.userId, followedId: req.params.userId } });
   res.json({ ok: true });
 });

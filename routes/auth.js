@@ -5,12 +5,13 @@ const { requireAuth } = require("../middleware/auth");
 
 const router = express.Router();
 
-// How many rounds bcrypt uses to hash passwords. Higher = slower but more
-// secure against brute-force guessing. 12 is a solid, commonly used value.
 const BCRYPT_ROUNDS = 12;
 
-// Strips fields we never want to send back to the browser, like the
-// password hash. Always pass user objects through this before res.json.
+// The founder account that every new user automatically follows and
+// cannot unfollow -- the MySpace Tom pattern. Change this to your
+// actual Spindex username once you've created your account.
+const FOUNDER_USERNAME = "brockpierce";
+
 function publicUser(user) {
   return {
     id: user.id,
@@ -22,7 +23,6 @@ function publicUser(user) {
 }
 
 // POST /api/auth/signup
-// Creates a new account and immediately logs them in (sets the session).
 router.post("/signup", async (req, res) => {
   const { email, password, username, displayName } = req.body;
 
@@ -47,6 +47,23 @@ router.post("/signup", async (req, res) => {
   const user = await prisma.user.create({
     data: { email, passwordHash, username, displayName },
   });
+
+  // Auto-follow the founder account. We do this silently -- if the
+  // founder account doesn't exist yet (e.g. you're signing up for the
+  // first time as the founder), we just skip it rather than erroring.
+  try {
+    const founder = await prisma.user.findUnique({ where: { username: FOUNDER_USERNAME } });
+    if (founder && founder.id !== user.id) {
+      await prisma.follow.upsert({
+        where: { followerId_followedId: { followerId: user.id, followedId: founder.id } },
+        update: {},
+        create: { followerId: user.id, followedId: founder.id, locked: true },
+      });
+    }
+  } catch (err) {
+    // Don't fail signup if the auto-follow errors -- just log it
+    console.error("Auto-follow founder failed:", err.message);
+  }
 
   req.session.userId = user.id;
   res.status(201).json({ user: publicUser(user) });

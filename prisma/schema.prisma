@@ -34,10 +34,11 @@ model User {
 }
 
 model Follow {
-  id         String   @id @default(cuid())
-  followerId String
-  followedId String
-  createdAt  DateTime @default(now())
+  id          String   @id @default(cuid())
+  followerId  String
+  followedId  String
+  locked      Boolean  @default(false) // true = cannot be unfollowed (founder account)
+  createdAt   DateTime @default(now())
 
   follower User @relation("Following", fields: [followerId], references: [id])
   followed User @relation("Followers", fields: [followedId], references: [id])
