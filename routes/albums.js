@@ -110,15 +110,21 @@ router.get("/", async (req, res) => {
       let score = 0;
       const title = (a.title || "").toLowerCase();
       const artist = (a.artistName || "").toLowerCase();
-      if (artist === s) score += 100;
-      else if (artist.startsWith(s)) score += 60;
-      else if (artist.includes(s)) score += 30;
+      // Artist name matches get the biggest boost — if you search "kendrick"
+      // you want Kendrick Lamar albums, not albums by people named Kendrick
+      if (artist === s) score += 200;
+      else if (artist.startsWith(s)) score += 150;
+      else if (artist.includes(s)) score += 80;
+      // Title matches are secondary
       if (title === s) score += 80;
       else if (title.startsWith(s)) score += 40;
+      else if (title.includes(s)) score += 10;
       if (a.releaseType === "Album") score += 20;
       else if (a.releaseType === "EP") score += 10;
       if (isDeprioritized(a)) score -= 30;
-      if (a.mbRatingCount) score += Math.min(a.mbRatingCount, 500) * 0.1;
+      // Popularity boost — capped so a very popular Graham Kendrick album
+      // doesn't outrank a less-rated Kendrick Lamar album
+      if (a.mbRatingCount) score += Math.min(a.mbRatingCount, 200) * 0.1;
       return { ...a, _score: score };
     });
 
