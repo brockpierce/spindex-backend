@@ -140,6 +140,15 @@ async function main() {
       continue;
     }
 
+    // Skip releases with secondary types that indicate non-studio content.
+    // We keep Compilation since official posthumous releases use that type.
+    const secondaryTypes = entry["secondary-types"] || [];
+    const SKIP_SECONDARY = new Set(["Live", "Remix", "DJ-mix", "Mixtape/Street", "Demo"]);
+    if (secondaryTypes.some((t) => SKIP_SECONDARY.has(t))) {
+      skipped++;
+      continue;
+    }
+
     const releaseYear = extractYear(entry["first-release-date"]);
     if (flags.minYear && releaseYear && releaseYear < flags.minYear) {
       skipped++;
