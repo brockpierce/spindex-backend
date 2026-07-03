@@ -97,7 +97,8 @@ router.get("/", async (req, res) => {
       if (a.releaseType === "Album") score += 20;
       else if (a.releaseType === "EP") score += 10;
       if (isDeprioritized(a)) score -= 30;
-      if (a.releaseYear) score += Math.min(a.releaseYear - 1950, 50) * 0.1;
+      // Boost by MusicBrainz rating vote count -- more votes = more well-known
+      if (a.mbRatingCount) score += Math.min(a.mbRatingCount, 500) * 0.1;
       return { ...a, _score: score };
     });
 

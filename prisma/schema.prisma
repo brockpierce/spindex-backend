@@ -5,8 +5,7 @@
 // Docs: https://www.prisma.io/docs
 
 generator client {
-  provider      = "prisma-client-js"
-  binaryTargets = ["native", "debian-openssl-3.0.x"]
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -58,6 +57,7 @@ model Album {
   releaseType   String?  @default("Album") // "Album" | "EP" | "Single" | "Broadcast" | "Other"
   coverArtUrl   String?
   musicbrainzId String?  @unique
+  mbRatingCount Int?     @default(0)
   createdByUserId String?
   createdAt     DateTime @default(now())
 

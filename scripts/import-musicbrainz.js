@@ -83,6 +83,7 @@ async function flushBatch(batch) {
           artistName: album.artistName,
           releaseYear: album.releaseYear,
           releaseType: album.releaseType,
+          mbRatingCount: album.mbRatingCount,
         },
         create: album,
       })
@@ -151,6 +152,7 @@ async function main() {
       artistName: extractArtistName(entry["artist-credit"]),
       releaseYear,
       releaseType: primaryType,
+      mbRatingCount: entry.rating ? (entry.rating["votes-count"] || 0) : 0,
     });
     imported++;
 
