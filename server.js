@@ -2,6 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const session = require("express-session");
 const cors = require("cors");
+const SQLiteStore = require("connect-sqlite3")(session);
 
 const authRoutes = require("./routes/auth");
 const albumRoutes = require("./routes/albums");
@@ -16,17 +17,6 @@ const userRoutes = require("./routes/users");
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Lets the frontend make requests to this server and have cookies (the
-// session) come along with them. `credentials: true` is what makes the
-// session cookie actually work cross-origin -- without it, every request
-// would look "logged out".
-//
-// DEV-ONLY NOTE: this allows any origin to call the API with credentials,
-// which is what's needed to test against this server from a Claude
-// artifact (artifacts run on Anthropic's domain, not localhost, so a
-// fixed origin like "http://localhost:5173" would get blocked by the
-// browser). This setting is NOT safe for a real deployment -- before
-// going live, lock `origin` back down to your actual frontend's URL.
 const ALLOWED_ORIGINS = [
   process.env.FRONTEND_URL,
   "https://spindex-frontend.vercel.app",
@@ -36,7 +26,6 @@ const ALLOWED_ORIGINS = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (mobile apps, curl) and allowed origins
       if (!origin || ALLOWED_ORIGINS.includes(origin)) {
         callback(null, true);
       } else {
@@ -46,23 +35,20 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json());
+app.use(express.json({ limit: "10mb" })); // 10mb to handle base64 avatar images
+
+// Determine session DB path -- use persistent disk on Render, local file in dev
+const SESSION_DB_DIR = process.env.NODE_ENV === "production" ? "/var/data" : ".";
 
 app.use(
   session({
+    store: new SQLiteStore({ db: "sessions.db", dir: SESSION_DB_DIR }),
     secret: process.env.SESSION_SECRET || "dev-only-secret-change-this-in-production",
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
       maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days
-      // DEV-ONLY NOTE: sameSite "none" + secure is required for the
-      // session cookie to survive a genuinely cross-origin request (e.g.
-      // from a Claude artifact, which is served over HTTPS on a
-      // different domain than your localhost server). "secure: true"
-      // normally means "HTTPS only", which localhost isn't -- most
-      // browsers special-case localhost as an exception during dev, but
-      // this combination is still meant for testing, not production.
       sameSite: "none",
       secure: true,
     },
