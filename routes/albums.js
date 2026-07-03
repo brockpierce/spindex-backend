@@ -17,11 +17,19 @@ const EXCLUDE_TITLE_PATTERNS = [
   /\bat the\b/i,
   /\bat [a-z]/i,
   /\bkaraoke\b/i,
-  /^\d{4}[-/]\d{2}[-/]\d{2}/,  // date-prefixed bootlegs "1995-03-06: ..."
+  /^\d{4}[-/.]\d{2}[-/.]\d{2}/,
+  /^\d{2}[-/.]\d{2}[-/.]\d{4}/,
+  /\d{4}-\d{2}-\d{2}/,
+  /:\s+[A-Z][a-z]+.*,/,
   /\bunofficial\b/i,
   /\bpirate\b/i,
   /\bdemo tape\b/i,
   /\bpromo\b/i,
+  /\blive recording\b/i,
+  /\blive at\b/i,
+  /\blive in\b/i,
+  /\blive from\b/i,
+  /\brecorded live\b/i,
 ];
 
 const EXCLUDE_TYPES = new Set(["Live", "Bootleg"]);
@@ -43,6 +51,9 @@ const DEPRIORITIZE_PATTERNS = [
   /\binstrumental version\b/i,
   /\bacoustic version\b/i,
   /various artists/i,
+  /\banthology\b/i,
+  /\bsingles\b/i,
+  /\brarities\b/i,
 ];
 
 function isDeprioritized(album) {
