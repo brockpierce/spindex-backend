@@ -70,21 +70,19 @@ router.get("/", async (req, res) => {
 
   if (search) {
     try {
-      // Use FTS5 full-text search for speed -- requires the album_fts virtual
-      // table to exist (created once via the setup command in the README).
-      // Escape special FTS5 characters and append * for prefix matching.
       const ftsQuery = search.replace(/['"*^]/g, " ").trim() + "*";
-      raw = await prisma.$queryRawUnsafe(`
+      const ftsResults = await prisma.$queryRawUnsafe(`
         SELECT a.id, a.title, a.artistName, a.releaseYear, a.releaseType,
                a.coverArtUrl, a.musicbrainzId, a.mbRatingCount
-        FROM Album a
-        INNER JOIN album_fts f ON f.rowid = a.rowid
+        FROM album_fts f
+        INNER JOIN Album a ON a.id = f.id
         WHERE album_fts MATCH ?
         ORDER BY a.mbRatingCount DESC
         LIMIT ?
       `, ftsQuery, limit * 3);
+      raw = ftsResults;
     } catch (ftsErr) {
-      // FTS table doesn't exist yet -- fall back to CONTAINS search
+      console.error("FTS search failed, falling back:", ftsErr.message);
       raw = await prisma.album.findMany({
         where: {
           OR: [
