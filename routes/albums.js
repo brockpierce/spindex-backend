@@ -110,20 +110,26 @@ router.get("/", async (req, res) => {
       let score = 0;
       const title = (a.title || "").toLowerCase();
       const artist = (a.artistName || "").toLowerCase();
-      // Artist name matches get the biggest boost — if you search "kendrick"
-      // you want Kendrick Lamar albums, not albums by people named Kendrick
-      if (artist === s) score += 200;
-      else if (artist.startsWith(s)) score += 150;
-      else if (artist.includes(s)) score += 80;
-      // Title matches are secondary
-      if (title === s) score += 80;
-      else if (title.startsWith(s)) score += 40;
-      else if (title.includes(s)) score += 10;
+
+      // Artist name matching -- by far the strongest signal
+      if (artist === s) score += 300;
+      else if (artist.startsWith(s)) score += 200;
+      else if (artist.includes(s)) score += 100;
+
+      // Title matching -- only boost if artist also matches
+      // This prevents "The Beatles Story" outranking Abbey Road
+      const artistMatches = artist.includes(s);
+      if (title === s) score += artistMatches ? 80 : 20;
+      else if (title.startsWith(s)) score += artistMatches ? 40 : 10;
+      else if (title.includes(s)) score += artistMatches ? 20 : 5;
+
+      // If search term is in title but artist doesn't match at all,
+      // heavily penalize -- these are usually compilations or tributes
+      if (!artistMatches && (title.includes(s))) score -= 60;
+
       if (a.releaseType === "Album") score += 20;
       else if (a.releaseType === "EP") score += 10;
       if (isDeprioritized(a)) score -= 30;
-      // Popularity boost — capped so a very popular Graham Kendrick album
-      // doesn't outrank a less-rated Kendrick Lamar album
       if (a.mbRatingCount) score += Math.min(a.mbRatingCount, 200) * 0.1;
       return { ...a, _score: score };
     });
