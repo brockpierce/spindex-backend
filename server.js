@@ -27,9 +27,22 @@ const PORT = process.env.PORT || 3001;
 // fixed origin like "http://localhost:5173" would get blocked by the
 // browser). This setting is NOT safe for a real deployment -- before
 // going live, lock `origin` back down to your actual frontend's URL.
+const ALLOWED_ORIGINS = [
+  process.env.FRONTEND_URL,
+  "https://spindex-frontend.vercel.app",
+  "http://localhost:5173",
+].filter(Boolean);
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "https://spindex-frontend.vercel.app",
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl) and allowed origins
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
   })
 );
