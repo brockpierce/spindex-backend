@@ -78,7 +78,7 @@ router.get("/", async (req, res) => {
   // Fetch more than needed so we can filter and sort by relevance
   const raw = await prisma.album.findMany({
     where,
-    take: limit * 4,
+    take: limit * 3,
     orderBy: [{ mbRatingCount: "desc" }],
   });
 
