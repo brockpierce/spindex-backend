@@ -29,7 +29,7 @@ const PORT = process.env.PORT || 3001;
 // going live, lock `origin` back down to your actual frontend's URL.
 app.use(
   cors({
-    origin: true, // reflects whatever origin made the request -- DEV ONLY, see note above
+    origin: process.env.FRONTEND_URL || "https://spindex-frontend.vercel.app",
     credentials: true,
   })
 );
