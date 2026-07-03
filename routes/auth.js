@@ -108,10 +108,23 @@ router.get("/me", async (req, res) => {
   }
   const user = await prisma.user.findUnique({ where: { id: req.session.userId } });
   if (!user) {
-    // Session points at a user that no longer exists -- clear it.
     req.session.destroy(() => {});
     return res.json({ user: null });
   }
+  res.json({ user: publicUser(user) });
+});
+
+// PUT /api/auth/profile
+// Saves display name, bio, and avatar (stored as base64 data URL).
+// Username and email changes are not supported here -- those need
+// extra validation (uniqueness checks, re-auth) and can be added later.
+router.put("/profile", requireAuth, async (req, res) => {
+  const { displayName, bio, avatarUrl } = req.body;
+  const data = {};
+  if (displayName !== undefined) data.displayName = displayName.trim().slice(0, 60);
+  if (bio !== undefined) data.bio = bio.trim().slice(0, 300);
+  if (avatarUrl !== undefined) data.avatarUrl = avatarUrl; // base64 data URL or null
+  const user = await prisma.user.update({ where: { id: req.session.userId }, data });
   res.json({ user: publicUser(user) });
 });
 
