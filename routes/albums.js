@@ -5,18 +5,48 @@ const { getCoverArtUrl } = require("../lib/coverart");
 
 const router = express.Router();
 
-// Words in titles that suggest a release is not a proper studio album --
-// live recordings, bootlegs, demos, compilations etc. We de-prioritise
-// these in search results so proper albums appear first.
+// Words/patterns in titles that indicate a release we want to exclude
+// entirely from search results -- bootlegs, live recordings, unofficial
+// releases, date-stamped recordings, etc.
+const EXCLUDE_TITLE_PATTERNS = [
+  /\bbootleg\b/i,
+  /\blive\b/i,
+  /\brehearsal\b/i,
+  /\bconcert\b/i,
+  /\bin concert\b/i,
+  /\bat the\b/i,
+  /\bat [a-z]/i,
+  /\bkaraoke\b/i,
+  /^\d{4}[-/]\d{2}[-/]\d{2}/,  // date-prefixed bootlegs "1995-03-06: ..."
+  /\bunofficial\b/i,
+  /\bpirate\b/i,
+  /\bdemo tape\b/i,
+  /\bpromo\b/i,
+];
+
+const EXCLUDE_TYPES = new Set(["Live", "Bootleg"]);
+
+function shouldExclude(album) {
+  if (EXCLUDE_TYPES.has(album.releaseType)) return true;
+  return EXCLUDE_TITLE_PATTERNS.some((p) => p.test(album.title));
+}
+
+// Words in titles that suggest lower quality but we still show them,
+// just deprioritised below proper studio albums and EPs.
 const DEPRIORITIZE_PATTERNS = [
-  /\blive\b/i, /\bbootleg\b/i, /\bdemo\b/i, /\brehearsal\b/i,
-  /\bconcert\b/i, /\btour\b/i, /\bsampler\b/i, /\btribute\b/i,
-  /\bkaraoke\b/i, /\binstrumental version\b/i, /\bacoustic version\b/i,
-  /^\d{4}[-/]\d{2}[-/]\d{2}/, // date-prefixed bootleg titles like "1995-03-06: ..."
+  /\bcompilation\b/i,
+  /\btribute\b/i,
+  /\bsampler\b/i,
+  /\bcollection\b/i,
+  /\bbest of\b/i,
+  /\bgreatest hits\b/i,
+  /\binstrumental version\b/i,
+  /\bacoustic version\b/i,
+  /various artists/i,
 ];
 
 function isDeprioritized(album) {
-  if (album.releaseType === "Live" || album.releaseType === "Compilation") return true;
+  if (album.releaseType === "Compilation") return true;
   return DEPRIORITIZE_PATTERNS.some((p) => p.test(album.title));
 }
 
@@ -34,31 +64,31 @@ router.get("/", async (req, res) => {
       }
     : {};
 
-  // Fetch more than needed so we can sort by relevance and trim
+  // Fetch more than needed so we can filter and sort by relevance
   const raw = await prisma.album.findMany({
     where,
-    take: limit * 6,
+    take: limit * 8,
     orderBy: [{ releaseYear: "desc" }],
   });
 
-  // Sort: exact artist match first, then exact title match, then proper
-  // studio albums before live/bootleg/compilation, then by year desc.
   const s = search.toLowerCase();
-  const scored = raw.map((a) => {
-    let score = 0;
-    const title = (a.title || "").toLowerCase();
-    const artist = (a.artistName || "").toLowerCase();
-    if (artist === s) score += 100;
-    else if (artist.startsWith(s)) score += 60;
-    else if (artist.includes(s)) score += 30;
-    if (title === s) score += 80;
-    else if (title.startsWith(s)) score += 40;
-    if (a.releaseType === "Album") score += 20;
-    else if (a.releaseType === "EP") score += 10;
-    if (isDeprioritized(a)) score -= 50;
-    if (a.releaseYear) score += Math.min(a.releaseYear - 1950, 50) * 0.1;
-    return { ...a, _score: score };
-  });
+  const scored = raw
+    .filter((a) => !shouldExclude(a))
+    .map((a) => {
+      let score = 0;
+      const title = (a.title || "").toLowerCase();
+      const artist = (a.artistName || "").toLowerCase();
+      if (artist === s) score += 100;
+      else if (artist.startsWith(s)) score += 60;
+      else if (artist.includes(s)) score += 30;
+      if (title === s) score += 80;
+      else if (title.startsWith(s)) score += 40;
+      if (a.releaseType === "Album") score += 20;
+      else if (a.releaseType === "EP") score += 10;
+      if (isDeprioritized(a)) score -= 30;
+      if (a.releaseYear) score += Math.min(a.releaseYear - 1950, 50) * 0.1;
+      return { ...a, _score: score };
+    });
 
   scored.sort((a, b) => b._score - a._score);
 
