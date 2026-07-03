@@ -28,8 +28,8 @@ router.get("/", async (req, res) => {
   const where = search
     ? {
         OR: [
-          { title: { contains: search, mode: "insensitive" } },
-          { artistName: { contains: search, mode: "insensitive" } },
+          { title: { contains: search } },
+          { artistName: { contains: search } },
         ],
       }
     : {};
