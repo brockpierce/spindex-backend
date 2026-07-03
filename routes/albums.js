@@ -66,21 +66,44 @@ router.get("/", async (req, res) => {
   const search = (req.query.search || "").trim();
   const limit = Math.min(parseInt(req.query.limit, 10) || 50, 100);
 
-  const where = search
-    ? {
-        OR: [
-          { title: { contains: search } },
-          { artistName: { contains: search } },
-        ],
-      }
-    : {};
+  let raw = [];
 
-  // Fetch more than needed so we can filter and sort by relevance
-  const raw = await prisma.album.findMany({
-    where,
-    take: limit * 3,
-    orderBy: [{ mbRatingCount: "desc" }],
-  });
+  if (search) {
+    try {
+      // Use FTS5 full-text search for speed -- requires the album_fts virtual
+      // table to exist (created once via the setup command in the README).
+      // Escape special FTS5 characters and append * for prefix matching.
+      const ftsQuery = search.replace(/['"*^]/g, " ").trim() + "*";
+      raw = await prisma.$queryRawUnsafe(`
+        SELECT a.id, a.title, a.artistName, a.releaseYear, a.releaseType,
+               a.coverArtUrl, a.musicbrainzId, a.mbRatingCount
+        FROM Album a
+        INNER JOIN album_fts f ON f.rowid = a.rowid
+        WHERE album_fts MATCH ?
+        ORDER BY a.mbRatingCount DESC
+        LIMIT ?
+      `, ftsQuery, limit * 3);
+    } catch (ftsErr) {
+      // FTS table doesn't exist yet -- fall back to CONTAINS search
+      raw = await prisma.album.findMany({
+        where: {
+          OR: [
+            { title: { contains: search } },
+            { artistName: { contains: search } },
+          ],
+        },
+        take: limit * 3,
+        orderBy: [{ mbRatingCount: "desc" }],
+      });
+    }
+  } else {
+    raw = await prisma.album.findMany({
+      take: limit,
+      orderBy: [{ mbRatingCount: "desc" }],
+    });
+  }
+
+  if (!search) return res.json({ albums: raw });
 
   const s = search.toLowerCase();
   const scored = raw
@@ -97,13 +120,11 @@ router.get("/", async (req, res) => {
       if (a.releaseType === "Album") score += 20;
       else if (a.releaseType === "EP") score += 10;
       if (isDeprioritized(a)) score -= 30;
-      // Boost by MusicBrainz rating vote count -- more votes = more well-known
       if (a.mbRatingCount) score += Math.min(a.mbRatingCount, 500) * 0.1;
       return { ...a, _score: score };
     });
 
   scored.sort((a, b) => b._score - a._score);
-
   res.json({ albums: scored.slice(0, limit) });
 });
 
