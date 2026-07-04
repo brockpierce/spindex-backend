@@ -1,14 +1,20 @@
-// Checks that the request came from a logged-in user (via express-session,
-// configured in server.js). If not logged in, responds with 401 instead of
-// letting the route run. Any route that needs "the current user" uses this.
-//
-// Usage: router.post("/reviews", requireAuth, (req, res) => { ... })
-// Inside the handler, req.session.userId is guaranteed to be set.
+const jwt = require("jsonwebtoken");
+
+const JWT_SECRET = process.env.JWT_SECRET || "dev-jwt-secret-change-in-production";
+
 function requireAuth(req, res, next) {
-  if (!req.session || !req.session.userId) {
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith("Bearer ")) {
     return res.status(401).json({ error: "You need to be logged in to do that." });
   }
-  next();
+  const token = header.slice(7);
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    req.userId = payload.userId;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: "Session expired — please log in again." });
+  }
 }
 
-module.exports = { requireAuth };
+module.exports = { requireAuth, JWT_SECRET };
