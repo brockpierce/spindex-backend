@@ -19,7 +19,7 @@ router.put("/:albumId", requireAuth, async (req, res) => {
   }
 
   const existing = await prisma.listenStatus.findUnique({
-    where: { userId_albumId: { userId: req.session.userId, albumId } },
+    where: { userId_albumId: { userId: req.userId, albumId } },
   });
 
   if (existing && existing.status === status) {
@@ -28,9 +28,9 @@ router.put("/:albumId", requireAuth, async (req, res) => {
   }
 
   await prisma.listenStatus.upsert({
-    where: { userId_albumId: { userId: req.session.userId, albumId } },
+    where: { userId_albumId: { userId: req.userId, albumId } },
     update: { status },
-    create: { userId: req.session.userId, albumId, status },
+    create: { userId: req.userId, albumId, status },
   });
 
   res.json({ status });
@@ -41,7 +41,7 @@ router.put("/:albumId", requireAuth, async (req, res) => {
 // -- this is the exact shape the demo's `listenStatus` state already uses,
 // so swapping it in is a one-line change on the frontend.
 router.get("/me", requireAuth, async (req, res) => {
-  const rows = await prisma.listenStatus.findMany({ where: { userId: req.session.userId } });
+  const rows = await prisma.listenStatus.findMany({ where: { userId: req.userId } });
   const map = {};
   for (const row of rows) map[row.albumId] = row.status;
   res.json({ listenStatus: map });

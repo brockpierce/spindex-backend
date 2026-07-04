@@ -35,8 +35,8 @@ router.get("/", async (req, res) => {
 
   // Get who the current user follows so we can mark isFollowing
   let followedIds = new Set();
-  if (req.session.userId) {
-    const follows = await prisma.follow.findMany({ where: { followerId: req.session.userId } });
+  if (req.userId) {
+    const follows = await prisma.follow.findMany({ where: { followerId: req.userId } });
     followedIds = new Set(follows.map((f) => f.followedId));
   }
 
@@ -52,8 +52,8 @@ router.get("/:username", async (req, res) => {
   if (!user) return res.status(404).json({ error: "User not found." });
 
   let followedIds = new Set();
-  if (req.session.userId) {
-    const follows = await prisma.follow.findMany({ where: { followerId: req.session.userId } });
+  if (req.userId) {
+    const follows = await prisma.follow.findMany({ where: { followerId: req.userId } });
     followedIds = new Set(follows.map((f) => f.followedId));
   }
 

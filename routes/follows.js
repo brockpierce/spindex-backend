@@ -11,16 +11,16 @@ function publicUser(user) {
 // POST /api/follows/:userId  -- follow someone
 router.post("/:userId", requireAuth, async (req, res) => {
   const { userId } = req.params;
-  if (userId === req.session.userId) {
+  if (userId === req.userId) {
     return res.status(400).json({ error: "You can't follow yourself." });
   }
   const targetUser = await prisma.user.findUnique({ where: { id: userId } });
   if (!targetUser) return res.status(404).json({ error: "User not found." });
 
   await prisma.follow.upsert({
-    where: { followerId_followedId: { followerId: req.session.userId, followedId: userId } },
+    where: { followerId_followedId: { followerId: req.userId, followedId: userId } },
     update: {},
-    create: { followerId: req.session.userId, followedId: userId },
+    create: { followerId: req.userId, followedId: userId },
   });
   res.json({ ok: true });
 });
@@ -28,12 +28,12 @@ router.post("/:userId", requireAuth, async (req, res) => {
 // DELETE /api/follows/:userId  -- unfollow (blocked for locked follows)
 router.delete("/:userId", requireAuth, async (req, res) => {
   const follow = await prisma.follow.findUnique({
-    where: { followerId_followedId: { followerId: req.session.userId, followedId: req.params.userId } },
+    where: { followerId_followedId: { followerId: req.userId, followedId: req.params.userId } },
   });
   if (follow?.locked) {
     return res.status(403).json({ error: "You cannot unfollow this account." });
   }
-  await prisma.follow.deleteMany({ where: { followerId: req.session.userId, followedId: req.params.userId } });
+  await prisma.follow.deleteMany({ where: { followerId: req.userId, followedId: req.params.userId } });
   res.json({ ok: true });
 });
 

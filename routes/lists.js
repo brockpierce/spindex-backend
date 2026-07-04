@@ -18,7 +18,7 @@ function publicList(list) {
 // GET /api/lists/me
 router.get("/me", requireAuth, async (req, res) => {
   const lists = await prisma.list.findMany({
-    where: { userId: req.session.userId },
+    where: { userId: req.userId },
     include: { items: { orderBy: { position: "asc" } } },
     orderBy: { createdAt: "desc" },
   });
@@ -31,7 +31,7 @@ router.get("/me", requireAuth, async (req, res) => {
 // there yet -- this route assumes prisma.savedList exists.
 router.get("/saved", requireAuth, async (req, res) => {
   const saved = await prisma.savedList.findMany({
-    where: { userId: req.session.userId },
+    where: { userId: req.userId },
     include: { list: { include: { items: true, user: true } } },
     orderBy: { createdAt: "desc" },
   });
@@ -43,21 +43,21 @@ router.post("/:listId/save", requireAuth, async (req, res) => {
   const { listId } = req.params;
   const list = await prisma.list.findUnique({ where: { id: listId } });
   if (!list) return res.status(404).json({ error: "List not found." });
-  if (list.userId === req.session.userId) {
+  if (list.userId === req.userId) {
     return res.status(400).json({ error: "That's your own list." });
   }
 
   await prisma.savedList.upsert({
-    where: { userId_listId: { userId: req.session.userId, listId } },
+    where: { userId_listId: { userId: req.userId, listId } },
     update: {},
-    create: { userId: req.session.userId, listId },
+    create: { userId: req.userId, listId },
   });
   res.json({ ok: true });
 });
 
 // DELETE /api/lists/:listId/save  (unsave)
 router.delete("/:listId/save", requireAuth, async (req, res) => {
-  await prisma.savedList.deleteMany({ where: { userId: req.session.userId, listId: req.params.listId } });
+  await prisma.savedList.deleteMany({ where: { userId: req.userId, listId: req.params.listId } });
   res.json({ ok: true });
 });
 
@@ -68,7 +68,7 @@ router.post("/", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "List title is required." });
   }
   const list = await prisma.list.create({
-    data: { userId: req.session.userId, title: title.trim(), description: description || null },
+    data: { userId: req.userId, title: title.trim(), description: description || null },
     include: { items: true },
   });
   res.status(201).json({ list: publicList(list) });
@@ -94,7 +94,7 @@ router.post("/:id/items", requireAuth, async (req, res) => {
 
   const list = await prisma.list.findUnique({ where: { id } });
   if (!list) return res.status(404).json({ error: "List not found." });
-  if (list.userId !== req.session.userId) {
+  if (list.userId !== req.userId) {
     return res.status(403).json({ error: "You can only edit your own lists." });
   }
 
@@ -112,7 +112,7 @@ router.delete("/:id/items/:albumId", requireAuth, async (req, res) => {
   const { id, albumId } = req.params;
   const list = await prisma.list.findUnique({ where: { id } });
   if (!list) return res.status(404).json({ error: "List not found." });
-  if (list.userId !== req.session.userId) {
+  if (list.userId !== req.userId) {
     return res.status(403).json({ error: "You can only edit your own lists." });
   }
   await prisma.listItem.deleteMany({ where: { listId: id, albumId } });

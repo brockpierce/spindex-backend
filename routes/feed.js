@@ -23,7 +23,7 @@ function cardFromReview(review, kind, reason) {
 //      queued yourself ("for_you" cards)
 // Both are merged and sorted by date, newest first.
 router.get("/", requireAuth, async (req, res) => {
-  const userId = req.session.userId;
+  const userId = req.userId;
 
   const follows = await prisma.follow.findMany({ where: { followerId: userId } });
   const followedIds = follows.map((f) => f.followedId);

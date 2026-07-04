@@ -35,17 +35,17 @@ router.put("/:albumId", requireAuth, async (req, res) => {
   if (!album) return res.status(404).json({ error: "Album not found." });
 
   const review = await prisma.review.upsert({
-    where: { userId_albumId: { userId: req.session.userId, albumId } },
+    where: { userId_albumId: { userId: req.userId, albumId } },
     update: { rating, reviewText, favTrack, leastFavTrack },
-    create: { userId: req.session.userId, albumId, rating, reviewText, favTrack, leastFavTrack },
+    create: { userId: req.userId, albumId, rating, reviewText, favTrack, leastFavTrack },
   });
 
   // Saving a rated review implies you've listened to it -- mirrors the
   // demo's behavior where rating something marks it "listened".
   await prisma.listenStatus.upsert({
-    where: { userId_albumId: { userId: req.session.userId, albumId } },
+    where: { userId_albumId: { userId: req.userId, albumId } },
     update: { status: "listened" },
-    create: { userId: req.session.userId, albumId, status: "listened" },
+    create: { userId: req.userId, albumId, status: "listened" },
   });
 
   res.json({ review: publicReview(review) });

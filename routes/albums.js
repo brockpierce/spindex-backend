@@ -173,7 +173,7 @@ router.post("/", requireAuth, async (req, res) => {
       artistName,
       releaseYear: releaseYear || null,
       releaseType: releaseType || "Album",
-      createdByUserId: req.session.userId,
+      createdByUserId: req.userId,
     },
   });
   res.status(201).json({ album });

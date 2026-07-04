@@ -9,7 +9,7 @@ const MAX_FAVORITES = 4;
 // GET /api/favorites/me
 router.get("/me", requireAuth, async (req, res) => {
   const favorites = await prisma.favorite.findMany({
-    where: { userId: req.session.userId },
+    where: { userId: req.userId },
     orderBy: { position: "asc" },
   });
   res.json({ favorites });
@@ -22,7 +22,7 @@ router.get("/me", requireAuth, async (req, res) => {
 router.post("/:albumId", requireAuth, async (req, res) => {
   const { albumId } = req.params;
 
-  const existing = await prisma.favorite.findMany({ where: { userId: req.session.userId } });
+  const existing = await prisma.favorite.findMany({ where: { userId: req.userId } });
   if (existing.some((f) => f.albumId === albumId)) {
     return res.status(409).json({ error: "Already favorited." });
   }
@@ -31,14 +31,14 @@ router.post("/:albumId", requireAuth, async (req, res) => {
   }
 
   const favorite = await prisma.favorite.create({
-    data: { userId: req.session.userId, albumId, position: existing.length + 1 },
+    data: { userId: req.userId, albumId, position: existing.length + 1 },
   });
   res.status(201).json({ favorite });
 });
 
 // DELETE /api/favorites/:albumId
 router.delete("/:albumId", requireAuth, async (req, res) => {
-  await prisma.favorite.deleteMany({ where: { userId: req.session.userId, albumId: req.params.albumId } });
+  await prisma.favorite.deleteMany({ where: { userId: req.userId, albumId: req.params.albumId } });
   res.json({ ok: true });
 });
 
