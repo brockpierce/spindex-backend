@@ -48,3 +48,10 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, () => console.log(`Server running at http://localhost:${PORT}`));
+process.on('uncaughtException', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.log('Port already in use, exiting gracefully');
+    process.exit(0);
+  }
+  throw err;
+});
