@@ -1,8 +1,6 @@
 require("dotenv").config();
 const express = require("express");
-const session = require("express-session");
 const cors = require("cors");
-const SQLiteStore = require("connect-sqlite3")(session);
 
 const authRoutes = require("./routes/auth");
 const albumRoutes = require("./routes/albums");
@@ -35,25 +33,28 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json({ limit: "10mb" })); // 10mb to handle base64 avatar images
+app.use(express.json({ limit: "10mb" }));
 
-// Determine session DB path -- use persistent disk on Render, local file in dev
-const SESSION_DB_DIR = process.env.NODE_ENV === "production" ? "/var/data" : ".";
+app.use("/api/auth", authRoutes);
+app.use("/api/albums", albumRoutes);
+app.use("/api/reviews", reviewRoutes);
+app.use("/api/listen-status", listenStatusRoutes);
+app.use("/api/favorites", favoriteRoutes);
+app.use("/api/lists", listRoutes);
+app.use("/api/follows", followRoutes);
+app.use("/api/feed", feedRoutes);
+app.use("/api/users", userRoutes);
 
-app.use(
-  session({
-    store: new SQLiteStore({ db: "sessions.db", dir: SESSION_DB_DIR }),
-    secret: process.env.SESSION_SECRET || "dev-only-secret-change-this-in-production",
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      httpOnly: true,
-      maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days
-      sameSite: "none",
-      secure: true,
-    },
-  })
-);
+app.get("/api/health", (req, res) => res.json({ ok: true }));
+
+app.use((err, req, res, next) => {
+  console.error(err);
+  res.status(500).json({ error: "Something went wrong on our end." });
+});
+
+app.listen(PORT, () => {
+  console.log(`Server running at http://localhost:${PORT}`);
+});
 
 app.use("/api/auth", authRoutes);
 app.use("/api/albums", albumRoutes);
