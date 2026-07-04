@@ -1,6 +1,7 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
-const { requireAuth } = require("../middleware/auth");
+const jwt = require("jsonwebtoken");
+const { JWT_SECRET } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -17,60 +18,40 @@ function publicUser(user, followedIds = new Set()) {
   };
 }
 
-// GET /api/users?search=brock
-router.get("/", async (req, res, next) => { try {
-  const search = (req.query.search || "").trim();
-  if (!search) return res.json({ users: [] });
+async function getFollowedIds(req) {
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith("Bearer ")) return new Set();
+  try {
+    const { userId } = jwt.verify(header.slice(7), JWT_SECRET);
+    const follows = await prisma.follow.findMany({ where: { followerId: userId } });
+    return new Set(follows.map((f) => f.followedId));
+  } catch { return new Set(); }
+}
 
-  const users = await prisma.user.findMany({
-    where: {
-      OR: [
-        { username: { contains: search } },
-        { displayName: { contains: search } },
-      ],
-    },
-    take: 20,
-    include: { _count: { select: { followers: true, following: true } } },
-  });
-
-  // Get who the current user follows so we can mark isFollowing
-  let followedIds = new Set();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    try {
-      const jwt = require("jsonwebtoken");
-      const { JWT_SECRET } = require("../middleware/auth");
-      const { userId } = jwt.verify(authHeader.slice(7), JWT_SECRET);
-      const follows = await prisma.follow.findMany({ where: { followerId: userId } });
-      followedIds = new Set(follows.map((f) => f.followedId));
-    } catch {}
-  }
-
-  res.json({ users: users.map((u) => publicUser(u, followedIds)) });
+router.get("/", async (req, res, next) => {
+  try {
+    const search = (req.query.search || "").trim();
+    if (!search) return res.json({ users: [] });
+    const users = await prisma.user.findMany({
+      where: { OR: [{ username: { contains: search } }, { displayName: { contains: search } }] },
+      take: 20,
+      include: { _count: { select: { followers: true, following: true } } },
+    });
+    const followedIds = await getFollowedIds(req);
+    res.json({ users: users.map((u) => publicUser(u, followedIds)) });
+  } catch (e) { next(e); }
 });
 
-// GET /api/users/:username
-router.get("/:username", async (req, res, next) => { try {
-  const user = await prisma.user.findUnique({
-    where: { username: req.params.username },
-    include: { _count: { select: { followers: true, following: true } } },
-  });
-  if (!user) return res.status(404).json({ error: "User not found." });
-
-  let followedIds = new Set();
-  let followedIds2 = new Set();
-  const authHeader2 = req.headers.authorization;
-  if (authHeader2 && authHeader2.startsWith("Bearer ")) {
-    try {
-      const jwt = require("jsonwebtoken");
-      const { JWT_SECRET } = require("../middleware/auth");
-      const { userId } = jwt.verify(authHeader2.slice(7), JWT_SECRET);
-      const follows = await prisma.follow.findMany({ where: { followerId: userId } });
-      followedIds2 = new Set(follows.map((f) => f.followedId));
-    } catch {}
-  }
-
-  res.json({ user: publicUser(user, followedIds) });
+router.get("/:username", async (req, res, next) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { username: req.params.username },
+      include: { _count: { select: { followers: true, following: true } } },
+    });
+    if (!user) return res.status(404).json({ error: "User not found." });
+    const followedIds = await getFollowedIds(req);
+    res.json({ user: publicUser(user, followedIds) });
+  } catch (e) { next(e); }
 });
 
 module.exports = router;
