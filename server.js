@@ -21,18 +21,13 @@ const ALLOWED_ORIGINS = [
   "http://localhost:5173",
 ].filter(Boolean);
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
-    credentials: true,
-  })
-);
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) callback(null, true);
+    else callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: "10mb" }));
 
 app.use("/api/auth", authRoutes);
@@ -52,31 +47,4 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "Something went wrong on our end." });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
-});
-
-app.use("/api/auth", authRoutes);
-app.use("/api/albums", albumRoutes);
-app.use("/api/reviews", reviewRoutes);
-app.use("/api/listen-status", listenStatusRoutes);
-app.use("/api/favorites", favoriteRoutes);
-app.use("/api/lists", listRoutes);
-app.use("/api/follows", followRoutes);
-app.use("/api/feed", feedRoutes);
-app.use("/api/users", userRoutes);
-
-app.get("/api/health", (req, res) => res.json({ ok: true }));
-
-// Catches any error thrown inside a route that wasn't already handled --
-// without this, an unexpected error would crash the whole server instead
-// of just failing that one request.
-app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({ error: "Something went wrong on our end." });
-});
-
-app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
-});
-
+app.listen(PORT, () => console.log(`Server running at http://localhost:${PORT}`));
