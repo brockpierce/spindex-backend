@@ -9,7 +9,7 @@ function publicUser(user) {
 }
 
 // POST /api/follows/:userId  -- follow someone
-router.post("/:userId", requireAuth, async (req, res) => {
+router.post("/:userId", requireAuth, async (req, res, next) => { try {
   const { userId } = req.params;
   if (userId === req.userId) {
     return res.status(400).json({ error: "You can't follow yourself." });
@@ -26,7 +26,7 @@ router.post("/:userId", requireAuth, async (req, res) => {
 });
 
 // DELETE /api/follows/:userId  -- unfollow (blocked for locked follows)
-router.delete("/:userId", requireAuth, async (req, res) => {
+router.delete("/:userId", requireAuth, async (req, res, next) => { try {
   const follow = await prisma.follow.findUnique({
     where: { followerId_followedId: { followerId: req.userId, followedId: req.params.userId } },
   });
@@ -38,7 +38,7 @@ router.delete("/:userId", requireAuth, async (req, res) => {
 });
 
 // GET /api/follows/:userId/followers
-router.get("/:userId/followers", async (req, res) => {
+router.get("/:userId/followers", async (req, res, next) => { try {
   const follows = await prisma.follow.findMany({
     where: { followedId: req.params.userId },
     include: { follower: true },
@@ -47,7 +47,7 @@ router.get("/:userId/followers", async (req, res) => {
 });
 
 // GET /api/follows/:userId/following
-router.get("/:userId/following", async (req, res) => {
+router.get("/:userId/following", async (req, res, next) => { try {
   const follows = await prisma.follow.findMany({
     where: { followerId: req.params.userId },
     include: { followed: true },

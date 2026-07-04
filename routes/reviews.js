@@ -23,7 +23,7 @@ function publicReview(review) {
 // PUT /api/reviews/:albumId
 // Create-or-update your own review for an album (one review per user per
 // album, so this is always an upsert, never a duplicate).
-router.put("/:albumId", requireAuth, async (req, res) => {
+router.put("/:albumId", requireAuth, async (req, res, next) => { try {
   const { albumId } = req.params;
   const { rating, reviewText, favTrack, leastFavTrack } = req.body;
 
@@ -55,7 +55,7 @@ router.put("/:albumId", requireAuth, async (req, res) => {
 // All reviews for one album, used for the "listened by" (when filtered to
 // people you follow, client-side or via a future ?following=true) and
 // "recent reviews" sections on the album page.
-router.get("/album/:albumId", async (req, res) => {
+router.get("/album/:albumId", async (req, res, next) => { try {
   const reviews = await prisma.review.findMany({
     where: { albumId: req.params.albumId },
     include: { user: true },
@@ -67,7 +67,7 @@ router.get("/album/:albumId", async (req, res) => {
 
 // GET /api/reviews/user/:userId
 // A user's review history, for their profile page.
-router.get("/user/:userId", async (req, res) => {
+router.get("/user/:userId", async (req, res, next) => { try {
   const reviews = await prisma.review.findMany({
     where: { userId: req.params.userId },
     include: { user: true },

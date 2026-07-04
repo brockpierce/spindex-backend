@@ -42,16 +42,24 @@ app.use("/api/users", userRoutes);
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
+// Catch all errors including unhandled async errors -- returns JSON
+// instead of crashing the process
 app.use((err, req, res, next) => {
-  console.error(err);
+  console.error("Route error:", err.message);
   res.status(500).json({ error: "Something went wrong on our end." });
 });
 
-app.listen(PORT, () => console.log(`Server running at http://localhost:${PORT}`));
-process.on('uncaughtException', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    console.log('Port already in use, exiting gracefully');
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled rejection:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  if (err.code === "EADDRINUSE") {
+    console.log("Port in use, waiting for restart");
     process.exit(0);
   }
-  throw err;
+  console.error("Uncaught exception:", err);
+  // Don't exit -- log and continue so the server stays up
 });
+
+app.listen(PORT, () => console.log(`Server running at http://localhost:${PORT}`));

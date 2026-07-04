@@ -10,7 +10,7 @@ const VALID_STATUSES = ["want_to_listen", "listened"];
 // Sets the status. To match the demo's "click again to un-set" behavior,
 // send the same status twice and it clears (deletes the row) on the
 // second call -- the frontend tracks current state and decides which.
-router.put("/:albumId", requireAuth, async (req, res) => {
+router.put("/:albumId", requireAuth, async (req, res, next) => { try {
   const { albumId } = req.params;
   const { status } = req.body;
 
@@ -40,7 +40,7 @@ router.put("/:albumId", requireAuth, async (req, res) => {
 // All of the current user's statuses, as a simple { albumId: status } map
 // -- this is the exact shape the demo's `listenStatus` state already uses,
 // so swapping it in is a one-line change on the frontend.
-router.get("/me", requireAuth, async (req, res) => {
+router.get("/me", requireAuth, async (req, res, next) => { try {
   const rows = await prisma.listenStatus.findMany({ where: { userId: req.userId } });
   const map = {};
   for (const row of rows) map[row.albumId] = row.status;
