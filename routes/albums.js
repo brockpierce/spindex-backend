@@ -61,7 +61,32 @@ function isDeprioritized(album) {
   return DEPRIORITIZE_PATTERNS.some((p) => p.test(album.title));
 }
 
-// GET /api/albums?search=radiohead&limit=50
+// GET /api/albums/trending -- curated list of featured albums
+const CURATED_TRENDING_IDS = [
+  "cmr6y5svsiouw4tlqfgyan220", // you seem pretty sad for a girl so in love - Olivia Rodrigo
+  "cmr6y4umrhw404tlqq6pozq4m", // U - underscores
+  "cmr6y6xbrjn164tlqesf4mcad", // Magazine - YHWH Nailgun
+  "cmr6y6sdrjir74tlqtyutyd3g", // Terrified . - fakemink
+  "cmr6y6qx5jhbn4tlqj84dicy6", // Detour - Kim Petras
+  "cmr6y58qmi80s4tlq4m9v9n5s", // Beauty Land - Greg Mendez
+  "cmr6y5mh2ijjz4tlql558m132", // Forever - Hekt
+  "cmr6xbsbisnvr4tlqi4tegfh9", // Ricky Music - Porches
+  "cmr6xjgshzgi24tlqp4ryy41b", // Warm Chris - Aldous Harding
+  "cmr6wi1w50xv94tlq8plkx96h", // Transatlanticism - Death Cab for Cutie
+];
+
+router.get("/trending", async (req, res, next) => {
+  try {
+    const albums = await prisma.album.findMany({
+      where: { id: { in: CURATED_TRENDING_IDS } },
+    });
+    // Preserve the curated order
+    const ordered = CURATED_TRENDING_IDS.map((id) => albums.find((a) => a.id === id)).filter(Boolean);
+    res.json({ albums: ordered });
+  } catch (e) { next(e); }
+});
+
+
 router.get("/", async (req, res) => {
   const search = (req.query.search || "").trim();
   const limit = Math.min(parseInt(req.query.limit, 10) || 50, 100);
