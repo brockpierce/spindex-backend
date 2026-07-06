@@ -63,6 +63,7 @@ function isDeprioritized(album) {
 
 // GET /api/albums/trending -- curated list of featured albums
 const CURATED_TRENDING_IDS = [
+  "nirosta-my-skyscraper",      // MY SKYSCRAPER - Nirosta Steel
   "cmr6y5svsiouw4tlqfgyan220", // you seem pretty sad for a girl so in love - Olivia Rodrigo
   "cmr6y4umrhw404tlqq6pozq4m", // U - underscores
   "cmr6y6xbrjn164tlqesf4mcad", // Magazine - YHWH Nailgun
