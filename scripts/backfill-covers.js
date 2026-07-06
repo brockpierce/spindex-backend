@@ -2,25 +2,26 @@
 //
 // Bulk-fetches cover art from Cover Art Archive for the top 10,000 albums
 // by mbRatingCount that are either missing coverArtUrl or marked "none"
-// (retrying previous failures). Rate-limited to be polite to CAA
-// (~1 req/sec — CAA has no hard limit but explicitly asks you not to hammer).
+// (retrying previous failures). Runs 2 concurrent workers with a 250ms
+// per-worker delay — CAA has no hard rate limit but explicitly asks you not
+// to hammer. Effective rate ~1.1 req/sec, total run ~2-3 hours.
 //
 // Run from the Render shell:
 //   DATABASE_URL="file:/var/data/dev.db" node scripts/backfill-covers.js
 //
-// At ~1 req/sec this takes roughly 3 hours to churn through 10k albums.
-// Safe to Ctrl+C and re-run — it picks up where it left off because it
-// keeps re-querying "still missing" on start.
+// Safe to Ctrl+C and re-run — the "still missing" query on start naturally
+// picks up where you left off.
 //
 // If you'd rather run it in the background so the shell can close:
-//   nohup DATABASE_URL="file:/var/data/dev.db" node scripts/backfill-covers.js > backfill.log 2>&1 &
+//   DATABASE_URL="file:/var/data/dev.db" nohup node scripts/backfill-covers.js > backfill.log 2>&1 &
 
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
 const CAA_BASE = "https://coverartarchive.org/release-group";
 const LIMIT = 10000;
-const DELAY_MS = 1100; // ~0.9 req/sec — polite to CAA
+const DELAY_MS = 250; // per-worker delay between requests
+const CONCURRENCY = 2; // number of parallel workers
 const USER_AGENT = "Spindex/1.0 ( https://spindex-frontend.vercel.app )";
 const MAX_RETRIES_TRANSIENT = 3;
 
@@ -88,31 +89,44 @@ async function main() {
   let ok = 0;
   let noneCount = 0;
   let transientCount = 0;
+  let nextIdx = 0;
   const startedAt = Date.now();
 
-  for (const album of albums) {
-    const result = await fetchCover(album.musicbrainzId);
-    if (result.url) {
-      await prisma.album.update({ where: { id: album.id }, data: { coverArtUrl: result.url } });
-      ok++;
-    } else if (result.none) {
-      await prisma.album.update({ where: { id: album.id }, data: { coverArtUrl: "none" } });
-      noneCount++;
-    } else {
-      transientCount++;
-    }
+  // Concurrent worker pool. Each worker pulls the next album from the shared
+  // queue (via nextIdx counter, safe because JS is single-threaded between
+  // awaits), fetches, updates the DB, sleeps DELAY_MS, then loops. When the
+  // queue is drained they all resolve and Promise.all returns.
+  async function worker() {
+    while (true) {
+      const idx = nextIdx++;
+      if (idx >= albums.length) return;
+      const album = albums[idx];
 
-    done++;
-    if (done % 25 === 0 || done === albums.length) {
-      const elapsed = ((Date.now() - startedAt) / 1000).toFixed(0);
-      const rate = (done / elapsed).toFixed(2);
-      console.log(
-        `  ${done}/${albums.length}  ok=${ok}  none=${noneCount}  transient=${transientCount}  (${rate}/s, elapsed ${elapsed}s)`
-      );
-    }
+      const result = await fetchCover(album.musicbrainzId);
+      if (result.url) {
+        await prisma.album.update({ where: { id: album.id }, data: { coverArtUrl: result.url } });
+        ok++;
+      } else if (result.none) {
+        await prisma.album.update({ where: { id: album.id }, data: { coverArtUrl: "none" } });
+        noneCount++;
+      } else {
+        transientCount++;
+      }
 
-    await new Promise((r) => setTimeout(r, DELAY_MS));
+      done++;
+      if (done % 25 === 0 || done === albums.length) {
+        const elapsed = ((Date.now() - startedAt) / 1000).toFixed(0);
+        const rate = (done / elapsed).toFixed(2);
+        console.log(
+          `  ${done}/${albums.length}  ok=${ok}  none=${noneCount}  transient=${transientCount}  (${rate}/s, elapsed ${elapsed}s)`
+        );
+      }
+
+      await new Promise((r) => setTimeout(r, DELAY_MS));
+    }
   }
+
+  await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
   const total = ((Date.now() - startedAt) / 1000).toFixed(0);
   console.log(`\n[${new Date().toISOString()}] Done in ${total}s.`);
