@@ -26,4 +26,20 @@ router.get("/", requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Public feed — recent reviews from anyone on the app.
+// Used by the "everyone" tab on the home page.
+router.get("/public", requireAuth, async (req, res, next) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit || "50", 10), 100);
+    const reviews = await prisma.review.findMany({
+      // Only reviews with actual text — pure rating-only reviews would clutter the feed
+      where: { reviewText: { not: null } },
+      include: { user: true },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
+    res.json({ feed: reviews.map(cardFromReview) });
+  } catch (e) { next(e); }
+});
+
 module.exports = router;

@@ -44,6 +44,17 @@ router.put("/:albumId", requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+router.delete("/:albumId", requireAuth, async (req, res, next) => {
+  try {
+    const { albumId } = req.params;
+    // deleteMany so no-op is fine if the review doesn't exist
+    await prisma.review.deleteMany({
+      where: { userId: req.userId, albumId },
+    });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
 router.get("/album/:albumId", async (req, res, next) => {
   try {
     const reviews = await prisma.review.findMany({
