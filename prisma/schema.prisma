@@ -1,7 +1,4 @@
-// This is your Prisma schema file. It defines every table in the app as a
-// "model" below. Run `npx prisma migrate dev --name init` after editing
-// this file to create/update the actual SQLite database to match it.
-//
+// This is your Prisma schema file.
 // Docs: https://www.prisma.io/docs
 
 generator client {
@@ -23,11 +20,13 @@ model User {
   avatarUrl    String?
   createdAt    DateTime @default(now())
 
-  reviews      Review[]
-  listenStatus ListenStatus[]
-  lists        List[]
-  favorites    Favorite[]
-  savedLists   SavedList[]
+  reviews         Review[]
+  listenStatus    ListenStatus[]
+  lists           List[]
+  favorites       Favorite[]
+  savedLists      SavedList[]
+  reviewReactions ReviewReaction[]
+  reviewComments  ReviewComment[]
 
   following Follow[] @relation("Following")
   followers Follow[] @relation("Followers")
@@ -37,7 +36,7 @@ model Follow {
   id          String   @id @default(cuid())
   followerId  String
   followedId  String
-  locked      Boolean  @default(false) // true = cannot be unfollowed (founder account)
+  locked      Boolean  @default(false)
   createdAt   DateTime @default(now())
 
   follower User @relation("Following", fields: [followerId], references: [id])
@@ -46,20 +45,17 @@ model Follow {
   @@unique([followerId, followedId])
 }
 
-// One row per album, whether it came from MusicBrainz (musicbrainzId set)
-// or was added manually by a user (musicbrainzId null). This is the table
-// the MusicBrainz import script populates in bulk.
 model Album {
-  id            String   @id @default(cuid())
-  title         String
-  artistName    String
-  releaseYear   Int?
-  releaseType   String?  @default("Album") // "Album" | "EP" | "Single" | "Broadcast" | "Other"
-  coverArtUrl   String?
-  musicbrainzId String?  @unique
-  mbRatingCount Int?     @default(0)
+  id              String   @id @default(cuid())
+  title           String
+  artistName      String
+  releaseYear     Int?
+  releaseType     String?  @default("Album")
+  coverArtUrl     String?
+  musicbrainzId   String?  @unique
+  mbRatingCount   Int?     @default(0)
   createdByUserId String?
-  createdAt     DateTime @default(now())
+  createdAt       DateTime @default(now())
 
   reviews      Review[]
   listenStatus ListenStatus[]
@@ -72,21 +68,11 @@ model Album {
   @@index([mbRatingCount])
 }
 
-// Romanized / locale-specific aliases for artists, sourced from
-// MusicBrainz. Joined to Album by artistName string (the DB has no
-// artist model), so "カヒミ・カリィ" on Album matches an alias row
-// with alias="Kahimi Karie". Search uses these to translate Latin-script
-// queries into results for artists whose primary name is in another script.
 model ArtistAlias {
   id                   String   @id @default(cuid())
-  // Native-script artist name matching Album.artistName -- the join key.
   artistName           String
-  // A romanized or locale-specific spelling, e.g. "Kahimi Karie" or "BTS".
   alias                String
-  // BCP-47 locale from MusicBrainz (en, ja, ko, etc.), null if unknown.
   locale               String?
-  // MusicBrainz artist MBID -- used to dedup across re-runs and to
-  // identify which artist an alias belongs to.
   musicbrainzArtistId  String
   createdAt            DateTime @default(now())
 
@@ -95,13 +81,10 @@ model ArtistAlias {
   @@index([alias])
 }
 
-// Editorial genre/theme tags on albums. Global (all users see the same
-// tags for a given album), admin-only writes -- see routes/tags.js.
-// Tags are normalized to lowercase and trimmed on write.
 model AlbumTag {
   id              String   @id @default(cuid())
   albumId         String
-  tag             String   // normalized: lowercase, trimmed
+  tag             String
   createdByUserId String
   createdAt       DateTime @default(now())
 
@@ -115,7 +98,7 @@ model Review {
   id              String   @id @default(cuid())
   userId          String
   albumId         String
-  rating          Int // 1-10 scale
+  rating          Int
   reviewText      String?
   favTrack        String?
   leastFavTrack   String?
@@ -123,17 +106,50 @@ model Review {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  user  User  @relation(fields: [userId], references: [id])
-  album Album @relation(fields: [albumId], references: [id])
+  user      User             @relation(fields: [userId], references: [id])
+  album     Album            @relation(fields: [albumId], references: [id])
+  reactions ReviewReaction[]
+  comments  ReviewComment[]
 
   @@unique([userId, albumId])
+}
+
+// Heart or frown on a review. One reaction per user per review.
+// kind is "heart" or "frown". Switching kind = update, not insert+delete.
+model ReviewReaction {
+  id        String   @id @default(cuid())
+  reviewId  String
+  userId    String
+  kind      String   // "heart" | "frown"
+  createdAt DateTime @default(now())
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([reviewId, userId])
+}
+
+// Threaded comments on reviews. Top-level comments have parentId = null.
+// Replies have parentId pointing to the comment they're replying to.
+model ReviewComment {
+  id        String   @id @default(cuid())
+  reviewId  String
+  userId    String
+  text      String
+  parentId  String?  // null = top-level comment, non-null = reply
+  createdAt DateTime @default(now())
+
+  review  Review          @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user    User            @relation(fields: [userId], references: [id])
+  parent  ReviewComment?  @relation("CommentThread", fields: [parentId], references: [id])
+  replies ReviewComment[] @relation("CommentThread")
 }
 
 model ListenStatus {
   id        String   @id @default(cuid())
   userId    String
   albumId   String
-  status    String // "want_to_listen" | "listened"
+  status    String
   createdAt DateTime @default(now())
 
   user  User  @relation(fields: [userId], references: [id])
@@ -150,9 +166,9 @@ model List {
   isPublic    Boolean  @default(true)
   createdAt   DateTime @default(now())
 
-  user      User       @relation(fields: [userId], references: [id])
-  items     ListItem[]
-  savedBy   SavedList[]
+  user    User       @relation(fields: [userId], references: [id])
+  items   ListItem[]
+  savedBy SavedList[]
 }
 
 model ListItem {
@@ -168,9 +184,6 @@ model ListItem {
   @@unique([listId, albumId])
 }
 
-// A user bookmarking someone else's public list -- this is what powers
-// the "saved lists" section, separate from "your lists" (which is the
-// List model above, owned directly by userId).
 model SavedList {
   id        String   @id @default(cuid())
   userId    String
