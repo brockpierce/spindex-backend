@@ -14,6 +14,17 @@ router.get("/me", requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Public: view any user's favorites by userId
+router.get("/user/:userId", async (req, res, next) => {
+  try {
+    const favorites = await prisma.favorite.findMany({
+      where: { userId: req.params.userId },
+      orderBy: { position: "asc" },
+    });
+    res.json({ favorites });
+  } catch (e) { next(e); }
+});
+
 router.post("/:albumId", requireAuth, async (req, res, next) => {
   try {
     const { albumId } = req.params;
