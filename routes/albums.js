@@ -152,22 +152,23 @@ router.get("/", async (req, res) => {
       console.error("FTS search failed, falling back:", ftsErr.message);
       raw = [];
     }
-    // Always also search the Album table directly for manually added albums
-    // (they may not be in FTS index) and merge, deduping by id.
+    // Also search Album table directly by title/artist for any albums
+    // that may not be in the FTS index (e.g. manually added albums).
+    // Use a LIMIT to avoid full table scans on 2.6M rows.
     try {
-      const manualResults = await prisma.album.findMany({
+      const directResults = await prisma.album.findMany({
         where: {
-          createdByUserId: { not: null },
           OR: [
-            { title: { contains: search } },
-            { artistName: { contains: search } },
+            { title: { startsWith: search } },
+            { artistName: { startsWith: search } },
           ],
+          createdByUserId: { not: null },
         },
-        take: 20,
+        take: 10,
       });
-      if (manualResults.length > 0) {
+      if (directResults.length > 0) {
         const existingIds = new Set(raw.map((r) => r.id));
-        const newOnes = manualResults.filter((r) => !existingIds.has(r.id));
+        const newOnes = directResults.filter((r) => !existingIds.has(r.id));
         raw = [...raw, ...newOnes];
       }
     } catch (e) { /* non-fatal */ }
