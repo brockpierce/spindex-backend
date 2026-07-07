@@ -114,8 +114,11 @@ router.post("/comments/:reviewId", requireAuth, async (req, res, next) => {
       return res.status(400).json({ error: "Comment text required." });
     }
 
+    // Allow comments on both Review and TextPost — look up both
     const review = await prisma.review.findUnique({ where: { id: reviewId } });
-    if (!review) return res.status(404).json({ error: "Review not found." });
+    const textPost = !review ? await prisma.textPost.findUnique({ where: { id: reviewId }, select: { id: true, userId: true } }) : null;
+    if (!review && !textPost) return res.status(404).json({ error: "Post not found." });
+    const ownerId = review ? review.userId : textPost.userId;
 
     if (parentId) {
       const parent = await prisma.reviewComment.findUnique({ where: { id: parentId } });
@@ -134,22 +137,21 @@ router.post("/comments/:reviewId", requireAuth, async (req, res, next) => {
       include: { user: { select: { username: true } } },
     });
 
-    // Notify review owner about the comment (if commenter isn't the owner)
+    // Notify post owner
     try {
-      if (review.userId !== req.userId) {
+      if (ownerId !== req.userId) {
         await prisma.notification.create({
           data: {
-            recipientId: review.userId,
+            recipientId: ownerId,
             actorId: req.userId,
             type: parentId ? "reply" : "comment",
             referenceId: reviewId,
           },
         });
       }
-      // If this is a reply, also notify the parent comment author
       if (parentId) {
         const parentComment = await prisma.reviewComment.findUnique({ where: { id: parentId } });
-        if (parentComment && parentComment.userId !== req.userId && parentComment.userId !== review.userId) {
+        if (parentComment && parentComment.userId !== req.userId && parentComment.userId !== ownerId) {
           await prisma.notification.create({
             data: {
               recipientId: parentComment.userId,
