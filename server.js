@@ -39,6 +39,7 @@ app.use("/api/lists", listRoutes);
 app.use("/api/follows", followRoutes);
 app.use("/api/feed", feedRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/tags", require("./routes/tags"));
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 

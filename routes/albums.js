@@ -5,6 +5,22 @@ const { getCoverArtUrl } = require("../lib/coverart");
 
 const router = express.Router();
 
+// Same admin check as tags.js — kept inline here so this file has no
+// new dependencies. If you promote another user to admin later, edit
+// both files or move this to a shared middleware.
+const ADMIN_USERNAME = "brockpierce";
+async function requireAdmin(req, res, next) {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { username: true } });
+    if (!user || user.username !== ADMIN_USERNAME) {
+      return res.status(403).json({ error: "Admin only." });
+    }
+    next();
+  } catch (e) {
+    return res.status(500).json({ error: "Auth check failed." });
+  }
+}
+
 // Words/patterns in titles that indicate a release we want to exclude
 // entirely from search results -- bootlegs, live recordings, unofficial
 // releases, date-stamped recordings, etc.
@@ -184,6 +200,53 @@ router.get("/", async (req, res) => {
   // Strip the internal fields before returning
   const results = scored.slice(0, limit).map(({ _score, _aliases, ...rest }) => rest);
   res.json({ albums: results });
+});
+
+// GET /api/albums/:id/tags -- read-only, public
+// Defined BEFORE /:id so Express matches this more specific route first.
+router.get("/:id/tags", async (req, res, next) => {
+  try {
+    const rows = await prisma.albumTag.findMany({
+      where: { albumId: req.params.id },
+      select: { tag: true },
+      orderBy: { tag: "asc" },
+    });
+    res.json({ tags: rows.map((r) => r.tag) });
+  } catch (e) { next(e); }
+});
+
+// PUT /api/albums/:id/tags -- replace the tag list for one album.
+// Admin-only. Body: { tags: string[] }
+router.put("/:id/tags", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const incoming = Array.isArray(req.body.tags) ? req.body.tags : [];
+
+    // Normalize: trim + lowercase, drop empties, cap length at 30, dedupe
+    const normalized = [...new Set(
+      incoming
+        .filter((t) => typeof t === "string")
+        .map((t) => t.trim().toLowerCase())
+        .filter((t) => t.length > 0 && t.length <= 30)
+    )];
+
+    // Confirm album exists so we return 404 instead of silently doing nothing
+    const album = await prisma.album.findUnique({ where: { id }, select: { id: true } });
+    if (!album) return res.status(404).json({ error: "Album not found." });
+
+    // Replace: delete existing, insert new. In a transaction so we don't
+    // end up with a half-applied list on failure.
+    await prisma.$transaction([
+      prisma.albumTag.deleteMany({ where: { albumId: id } }),
+      ...normalized.map((tag) =>
+        prisma.albumTag.create({
+          data: { albumId: id, tag, createdByUserId: req.userId },
+        })
+      ),
+    ]);
+
+    res.json({ tags: normalized });
+  } catch (e) { next(e); }
 });
 
 // GET /api/albums/:id
