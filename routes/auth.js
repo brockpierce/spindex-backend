@@ -33,11 +33,12 @@ router.post("/signup", async (req, res) => {
   }
   const existingEmail = await prisma.user.findUnique({ where: { email } });
   if (existingEmail) return res.status(409).json({ error: "An account with that email already exists." });
-  const existingUsername = await prisma.user.findUnique({ where: { username } });
+  const normalizedUsername = username.toLowerCase().trim();
+  const existingUsername = await prisma.user.findUnique({ where: { username: normalizedUsername } });
   if (existingUsername) return res.status(409).json({ error: "That username is already taken." });
 
   const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-  const user = await prisma.user.create({ data: { email, passwordHash, username, displayName } });
+  const user = await prisma.user.create({ data: { email, passwordHash, username: normalizedUsername, displayName } });
 
   try {
     const founder = await prisma.user.findUnique({ where: { username: FOUNDER_USERNAME } });
@@ -85,11 +86,26 @@ router.get("/me", async (req, res) => {
 
 // PUT /api/auth/profile
 router.put("/profile", requireAuth, async (req, res) => {
-  const { displayName, bio, avatarUrl } = req.body;
+  const { displayName, username, bio, avatarUrl } = req.body;
   const data = {};
   if (displayName !== undefined) data.displayName = displayName.trim().slice(0, 60);
-  if (bio !== undefined) data.bio = bio.trim().slice(0, 300);
+  if (bio !== undefined) data.bio = bio.trim().slice(0, 30);
   if (avatarUrl !== undefined) data.avatarUrl = avatarUrl;
+
+  // Handle username change with uniqueness check
+  if (username !== undefined) {
+    const normalized = username.toLowerCase().trim().slice(0, 30);
+    if (normalized.length < 1) {
+      return res.status(400).json({ error: "Username can't be empty." });
+    }
+    // Check if someone else already has this username
+    const existing = await prisma.user.findUnique({ where: { username: normalized } });
+    if (existing && existing.id !== req.userId) {
+      return res.status(409).json({ error: "That username is already taken." });
+    }
+    data.username = normalized;
+  }
+
   const user = await prisma.user.update({ where: { id: req.userId }, data });
   res.json({ user: publicUser(user) });
 });
