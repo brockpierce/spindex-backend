@@ -299,22 +299,38 @@ router.get("/:id", async (req, res) => {
 
 // POST /api/albums
 // Manual album creation for anything MusicBrainz doesn't have.
-router.post("/", requireAuth, async (req, res) => {
-  const { title, artistName, releaseYear, releaseType } = req.body;
-  if (!title || !artistName) {
-    return res.status(400).json({ error: "Title and artist name are required." });
-  }
+router.post("/", requireAuth, async (req, res, next) => {
+  try {
+    const { title, artistName, releaseYear, releaseType } = req.body;
+    if (!title || !artistName) {
+      return res.status(400).json({ error: "Title and artist name are required." });
+    }
 
-  const album = await prisma.album.create({
-    data: {
-      title,
-      artistName,
-      releaseYear: releaseYear || null,
-      releaseType: releaseType || "Album",
-      createdByUserId: req.userId,
-    },
-  });
-  res.status(201).json({ album });
+    const album = await prisma.album.create({
+      data: {
+        title,
+        artistName,
+        releaseYear: releaseYear || null,
+        releaseType: releaseType || "Album",
+        createdByUserId: req.userId,
+      },
+    });
+
+    // Insert into FTS index so the album is immediately searchable.
+    // Aliases are empty for manually added albums; they can be added later
+    // if the artist alias import runs and finds a match.
+    try {
+      await prisma.$executeRawUnsafe(
+        `INSERT OR REPLACE INTO album_fts(id, title, artistName, aliases) VALUES (?, ?, ?, '')`,
+        album.id, album.title, album.artistName
+      );
+    } catch (ftsErr) {
+      console.error("FTS insert failed for new album:", ftsErr.message);
+      // Non-fatal — album is still created, just won't appear in FTS search
+    }
+
+    res.status(201).json({ album });
+  } catch (e) { next(e); }
 });
 
 // PUT /api/albums/:id/cover -- admin only, stores a base64 data URL as cover art
