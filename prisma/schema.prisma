@@ -65,6 +65,7 @@ model Album {
   listenStatus ListenStatus[]
   listItems    ListItem[]
   favorites    Favorite[]
+  albumTags    AlbumTag[]
 
   @@index([title])
   @@index([artistName])
@@ -92,6 +93,22 @@ model ArtistAlias {
   @@unique([musicbrainzArtistId, alias])
   @@index([artistName])
   @@index([alias])
+}
+
+// Editorial genre/theme tags on albums. Global (all users see the same
+// tags for a given album), admin-only writes -- see routes/tags.js.
+// Tags are normalized to lowercase and trimmed on write.
+model AlbumTag {
+  id              String   @id @default(cuid())
+  albumId         String
+  tag             String   // normalized: lowercase, trimmed
+  createdByUserId String
+  createdAt       DateTime @default(now())
+
+  album Album @relation(fields: [albumId], references: [id], onDelete: Cascade)
+
+  @@unique([albumId, tag])
+  @@index([tag])
 }
 
 model Review {
