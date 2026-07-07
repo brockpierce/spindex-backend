@@ -25,6 +25,7 @@ model User {
   reviewReactions      ReviewReaction[]
   reviewComments       ReviewComment[]
   albumMixes           AlbumMix[]
+  textPosts            TextPost[]
   notificationsReceived Notification[] @relation("NotifRecipient")
   notificationsSent     Notification[] @relation("NotifActor")
 
@@ -165,6 +166,20 @@ model AlbumMixItem {
   album Album    @relation(fields: [albumId], references: [id])
 
   @@unique([mixId, albumId])
+}
+
+// Simple text posts — status updates, thoughts, etc. that don't
+// need an album attached. Shows up in the feed alongside reviews.
+model TextPost {
+  id        String   @id @default(cuid())
+  userId    String
+  text      String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([createdAt])
 }
 
 // Notification types: "follow", "comment", "reply", "reaction"
