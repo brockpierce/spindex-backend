@@ -27,6 +27,7 @@ model User {
   savedLists      SavedList[]
   reviewReactions ReviewReaction[]
   reviewComments  ReviewComment[]
+  albumMixes      AlbumMix[]
 
   following Follow[] @relation("Following")
   followers Follow[] @relation("Followers")
@@ -62,6 +63,7 @@ model Album {
   listItems    ListItem[]
   favorites    Favorite[]
   albumTags    AlbumTag[]
+  mixItems     AlbumMixItem[]
 
   @@index([title])
   @@index([artistName])
@@ -114,13 +116,11 @@ model Review {
   @@unique([userId, albumId])
 }
 
-// Heart or frown on a review. One reaction per user per review.
-// kind is "heart" or "frown". Switching kind = update, not insert+delete.
 model ReviewReaction {
   id        String   @id @default(cuid())
   reviewId  String
   userId    String
-  kind      String   // "heart" | "frown"
+  kind      String
   createdAt DateTime @default(now())
 
   review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
@@ -129,20 +129,45 @@ model ReviewReaction {
   @@unique([reviewId, userId])
 }
 
-// Threaded comments on reviews. Top-level comments have parentId = null.
-// Replies have parentId pointing to the comment they're replying to.
 model ReviewComment {
   id        String   @id @default(cuid())
   reviewId  String
   userId    String
   text      String
-  parentId  String?  // null = top-level comment, non-null = reply
+  parentId  String?
   createdAt DateTime @default(now())
 
   review  Review          @relation(fields: [reviewId], references: [id], onDelete: Cascade)
   user    User            @relation(fields: [userId], references: [id])
   parent  ReviewComment?  @relation("CommentThread", fields: [parentId], references: [id])
   replies ReviewComment[] @relation("CommentThread")
+}
+
+// User-created album mix (a curated list of albums with optional notes).
+model AlbumMix {
+  id          String   @id @default(cuid())
+  userId      String
+  title       String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user  User           @relation(fields: [userId], references: [id])
+  items AlbumMixItem[]
+}
+
+// An album inside an album mix, with position for ordering and an optional note.
+model AlbumMixItem {
+  id       String  @id @default(cuid())
+  mixId    String
+  albumId  String
+  position Int
+  note     String?
+
+  mix   AlbumMix @relation(fields: [mixId], references: [id], onDelete: Cascade)
+  album Album    @relation(fields: [albumId], references: [id])
+
+  @@unique([mixId, albumId])
 }
 
 model ListenStatus {
