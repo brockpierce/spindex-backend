@@ -8,7 +8,7 @@ const router = express.Router();
 // Same admin check as tags.js — kept inline here so this file has no
 // new dependencies. If you promote another user to admin later, edit
 // both files or move this to a shared middleware.
-const ADMIN_USERNAME = "brockpierce";
+const ADMIN_USERNAME = "brock";
 async function requireAdmin(req, res, next) {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { username: true } });
