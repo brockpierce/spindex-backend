@@ -8,7 +8,7 @@ const router = express.Router();
 // Same admin check as tags.js — kept inline here so this file has no
 // new dependencies. If you promote another user to admin later, edit
 // both files or move this to a shared middleware.
-const ADMIN_USERNAME = "brock";
+const ADMIN_USERNAME = "brockpierce";
 async function requireAdmin(req, res, next) {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { username: true } });
@@ -79,47 +79,25 @@ function isDeprioritized(album) {
 
 // GET /api/albums/by-artist/:artistName
 // Returns all albums by an artist, sorted by release year.
-// Matches on exact artistName OR any alias pointing to that artistName.
 router.get("/by-artist/:artistName", async (req, res, next) => {
   try {
     const artistName = decodeURIComponent(req.params.artistName);
 
-    // Also find any other artistName values that share aliases with this one
-    // (handles non-Latin primary names when searching by romanized form)
-    const aliases = await prisma.artistAlias.findMany({
-      where: { artistName: { equals: artistName, mode: "insensitive" } },
-      select: { musicbrainzArtistId: true },
-      distinct: ["musicbrainzArtistId"],
-    });
-    const mbids = aliases.map((a) => a.musicbrainzArtistId);
-
-    // Get all artistNames sharing those MBIDs (catches alternate spellings)
-    let artistNames = [artistName];
-    if (mbids.length > 0) {
-      const related = await prisma.artistAlias.findMany({
-        where: { musicbrainzArtistId: { in: mbids } },
-        select: { artistName: true },
-        distinct: ["artistName"],
-      });
-      artistNames = [...new Set([artistName, ...related.map((r) => r.artistName)])];
-    }
-
+    // Find albums matching this exact artistName (case-sensitive on SQLite)
     const albums = await prisma.album.findMany({
-      where: { artistName: { in: artistNames } },
+      where: { artistName },
       orderBy: [{ releaseYear: "asc" }, { title: "asc" }],
     });
 
-    // Also fetch all aliases for this artist to show in the page header
-    const allAliases = mbids.length > 0
-      ? await prisma.artistAlias.findMany({
-          where: { musicbrainzArtistId: { in: mbids }, locale: "en" },
-          select: { alias: true },
-          distinct: ["alias"],
-          take: 5,
-        })
-      : [];
+    // Also fetch English aliases for this artist
+    const aliases = await prisma.artistAlias.findMany({
+      where: { artistName, locale: "en" },
+      select: { alias: true },
+      distinct: ["alias"],
+      take: 5,
+    });
 
-    res.json({ albums, artistName, aliases: allAliases.map((a) => a.alias) });
+    res.json({ albums, artistName, aliases: aliases.map((a) => a.alias) });
   } catch (e) { next(e); }
 });
 
