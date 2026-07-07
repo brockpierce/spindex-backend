@@ -152,24 +152,21 @@ router.get("/", async (req, res) => {
       console.error("FTS search failed, falling back:", ftsErr.message);
       raw = [];
     }
-    // Also search Album table directly by title/artist for any albums
-    // that may not be in the FTS index (e.g. manually added albums).
-    // Use a LIMIT to avoid full table scans on 2.6M rows.
+    // Search manually added albums directly (small table subset, fast)
     try {
       const directResults = await prisma.album.findMany({
         where: {
-          OR: [
-            { title: { startsWith: search } },
-            { artistName: { startsWith: search } },
-          ],
           createdByUserId: { not: null },
         },
-        take: 10,
+        select: { id: true, title: true, artistName: true, releaseYear: true, releaseType: true, coverArtUrl: true, musicbrainzId: true, mbRatingCount: true },
       });
-      if (directResults.length > 0) {
+      const sl = search.toLowerCase();
+      const matched = directResults.filter((a) =>
+        a.title.toLowerCase().includes(sl) || a.artistName.toLowerCase().includes(sl)
+      );
+      if (matched.length > 0) {
         const existingIds = new Set(raw.map((r) => r.id));
-        const newOnes = directResults.filter((r) => !existingIds.has(r.id));
-        raw = [...raw, ...newOnes];
+        raw = [...raw, ...matched.filter((r) => !existingIds.has(r.id))];
       }
     } catch (e) { /* non-fatal */ }
   } else {
