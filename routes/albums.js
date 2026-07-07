@@ -293,4 +293,19 @@ router.post("/", requireAuth, async (req, res) => {
   res.status(201).json({ album });
 });
 
+// PUT /api/albums/:id/cover -- admin only, stores a base64 data URL as cover art
+router.put("/:id/cover", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const { coverDataUrl } = req.body;
+    if (!coverDataUrl || !coverDataUrl.startsWith("data:image/")) {
+      return res.status(400).json({ error: "Valid image data URL required." });
+    }
+    const album = await prisma.album.update({
+      where: { id: req.params.id },
+      data: { coverArtUrl: coverDataUrl },
+    });
+    res.json({ album });
+  } catch (e) { next(e); }
+});
+
 module.exports = router;
