@@ -71,6 +71,29 @@ model Album {
   @@index([mbRatingCount])
 }
 
+// Romanized / locale-specific aliases for artists, sourced from
+// MusicBrainz. Joined to Album by artistName string (the DB has no
+// artist model), so "カヒミ・カリィ" on Album matches an alias row
+// with alias="Kahimi Karie". Search uses these to translate Latin-script
+// queries into results for artists whose primary name is in another script.
+model ArtistAlias {
+  id                   String   @id @default(cuid())
+  // Native-script artist name matching Album.artistName -- the join key.
+  artistName           String
+  // A romanized or locale-specific spelling, e.g. "Kahimi Karie" or "BTS".
+  alias                String
+  // BCP-47 locale from MusicBrainz (en, ja, ko, etc.), null if unknown.
+  locale               String?
+  // MusicBrainz artist MBID -- used to dedup across re-runs and to
+  // identify which artist an alias belongs to.
+  musicbrainzArtistId  String
+  createdAt            DateTime @default(now())
+
+  @@unique([musicbrainzArtistId, alias])
+  @@index([artistName])
+  @@index([alias])
+}
+
 model Review {
   id              String   @id @default(cuid())
   userId          String
