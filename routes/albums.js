@@ -152,23 +152,26 @@ router.get("/", async (req, res) => {
       console.error("FTS search failed, falling back:", ftsErr.message);
       raw = [];
     }
-    // Search manually added albums directly (small table subset, fast)
+    // Manually added albums by ID — avoids full table scan on 2.6M rows.
+    // Add new IDs here when albums are manually created.
+    const MANUAL_ALBUM_IDS = [
+      'cmrb6ashp0000um6rlkdro0wo', // Adult Friend Finder
+      'cmrb6cy240002um6rn0it2fw6', // This Is My Second Rodeo
+      'cmrb6dsrv0003um6r3jxqqb5h', // Holidays in United States
+      'cmrb6fpmk0004um6rzjbazp18', // Songs at West End Prep (Tal Castle)
+    ];
     try {
-      const directResults = await prisma.album.findMany({
-        where: {
-          createdByUserId: { not: null },
-        },
+      const manualAlbums = await prisma.album.findMany({
+        where: { id: { in: MANUAL_ALBUM_IDS } },
         select: { id: true, title: true, artistName: true, releaseYear: true, releaseType: true, coverArtUrl: true, musicbrainzId: true, mbRatingCount: true },
       });
       const sl = search.toLowerCase();
-      const matched = directResults.filter((a) =>
+      // Store matched manual albums separately — merged after scoring so they
+      // always appear regardless of mbRatingCount score
+      raw._manualMatches = manualAlbums.filter((a) =>
         a.title.toLowerCase().includes(sl) || a.artistName.toLowerCase().includes(sl)
       );
-      if (matched.length > 0) {
-        const existingIds = new Set(raw.map((r) => r.id));
-        raw = [...raw, ...matched.filter((r) => !existingIds.has(r.id))];
-      }
-    } catch (e) { /* non-fatal */ }
+    } catch (e) { raw._manualMatches = []; }
   } else {
     raw = await prisma.album.findMany({
       take: limit,
@@ -225,9 +228,14 @@ router.get("/", async (req, res) => {
     });
 
   scored.sort((a, b) => b._score - a._score);
-  // Strip the internal fields before returning
-  const results = scored.slice(0, limit).map(({ _score, _aliases, ...rest }) => rest);
-  res.json({ albums: results });
+  const sliced = scored.slice(0, limit).map(({ _score, _aliases, ...rest }) => rest);
+
+  // Append manual albums that matched but weren't in FTS results
+  const manualMatches = (raw._manualMatches || []);
+  const slicedIds = new Set(sliced.map((r) => r.id));
+  const extraManual = manualMatches.filter((r) => !slicedIds.has(r.id));
+
+  res.json({ albums: [...extraManual, ...sliced] });
 });
 
 // GET /api/albums/:id/tags -- read-only, public
