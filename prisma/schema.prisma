@@ -1,6 +1,3 @@
-// This is your Prisma schema file.
-// Docs: https://www.prisma.io/docs
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -20,14 +17,16 @@ model User {
   avatarUrl    String?
   createdAt    DateTime @default(now())
 
-  reviews         Review[]
-  listenStatus    ListenStatus[]
-  lists           List[]
-  favorites       Favorite[]
-  savedLists      SavedList[]
-  reviewReactions ReviewReaction[]
-  reviewComments  ReviewComment[]
-  albumMixes      AlbumMix[]
+  reviews              Review[]
+  listenStatus         ListenStatus[]
+  lists                List[]
+  favorites            Favorite[]
+  savedLists           SavedList[]
+  reviewReactions      ReviewReaction[]
+  reviewComments       ReviewComment[]
+  albumMixes           AlbumMix[]
+  notificationsReceived Notification[] @relation("NotifRecipient")
+  notificationsSent     Notification[] @relation("NotifActor")
 
   following Follow[] @relation("Following")
   followers Follow[] @relation("Followers")
@@ -143,7 +142,6 @@ model ReviewComment {
   replies ReviewComment[] @relation("CommentThread")
 }
 
-// User-created album mix (a curated list of albums with optional notes).
 model AlbumMix {
   id          String   @id @default(cuid())
   userId      String
@@ -156,7 +154,6 @@ model AlbumMix {
   items AlbumMixItem[]
 }
 
-// An album inside an album mix, with position for ordering and an optional note.
 model AlbumMixItem {
   id       String  @id @default(cuid())
   mixId    String
@@ -168,6 +165,25 @@ model AlbumMixItem {
   album Album    @relation(fields: [albumId], references: [id])
 
   @@unique([mixId, albumId])
+}
+
+// Notification types: "follow", "comment", "reply", "reaction"
+// referenceId points to the relevant object (review ID for comment/reaction,
+// user ID for follow).
+model Notification {
+  id           String   @id @default(cuid())
+  recipientId  String
+  actorId      String
+  type         String   // "follow" | "comment" | "reply" | "reaction"
+  referenceId  String?  // reviewId for comment/reaction, null for follow
+  read         Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  recipient User @relation("NotifRecipient", fields: [recipientId], references: [id])
+  actor     User @relation("NotifActor", fields: [actorId], references: [id])
+
+  @@index([recipientId, read])
+  @@index([recipientId, createdAt])
 }
 
 model ListenStatus {

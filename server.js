@@ -42,6 +42,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/tags", require("./routes/tags"));
 app.use("/api/interactions", require("./routes/interactions"));
 app.use("/api/mixes", require("./routes/mixes"));
+app.use("/api/notifications", require("./routes/notifications"));
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 

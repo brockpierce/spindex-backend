@@ -18,6 +18,19 @@ router.post("/:userId", requireAuth, async (req, res, next) => {
       update: {},
       create: { followerId: req.userId, followedId: userId },
     });
+    // Notify the person being followed
+    try {
+      await prisma.notification.create({
+        data: {
+          recipientId: userId,
+          actorId: req.userId,
+          type: "follow",
+        },
+      });
+    } catch (notifErr) {
+      // Swallow — notification failure shouldn't block the follow
+      console.error("follow notification error:", notifErr.message);
+    }
     res.json({ ok: true });
   } catch (e) { next(e); }
 });

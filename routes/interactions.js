@@ -7,8 +7,6 @@ const router = express.Router();
 // REACTIONS
 // ============================================================
 
-// GET /api/interactions/reactions/:reviewId
-// Returns { heart: [username, ...], frown: [username, ...] }
 router.get("/reactions/:reviewId", async (req, res, next) => {
   try {
     const reactions = await prisma.reviewReaction.findMany({
@@ -21,9 +19,6 @@ router.get("/reactions/:reviewId", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// PUT /api/interactions/reactions/:reviewId
-// Body: { kind: "heart" | "frown" }
-// Toggles: if same kind exists, removes it. If different kind, switches.
 router.put("/reactions/:reviewId", requireAuth, async (req, res, next) => {
   try {
     const { reviewId } = req.params;
@@ -38,18 +33,31 @@ router.put("/reactions/:reviewId", requireAuth, async (req, res, next) => {
 
     if (existing) {
       if (existing.kind === kind) {
-        // Same reaction — remove it (toggle off)
         await prisma.reviewReaction.delete({ where: { id: existing.id } });
       } else {
-        // Different reaction — switch
         await prisma.reviewReaction.update({ where: { id: existing.id }, data: { kind } });
       }
     } else {
-      // No existing reaction — create
       await prisma.reviewReaction.create({ data: { reviewId, userId: req.userId, kind } });
+
+      // Notify review owner (only on new reaction, not toggle-off)
+      try {
+        const review = await prisma.review.findUnique({ where: { id: reviewId }, select: { userId: true } });
+        if (review && review.userId !== req.userId) {
+          await prisma.notification.create({
+            data: {
+              recipientId: review.userId,
+              actorId: req.userId,
+              type: "reaction",
+              referenceId: reviewId,
+            },
+          });
+        }
+      } catch (notifErr) {
+        console.error("reaction notification error:", notifErr.message);
+      }
     }
 
-    // Return updated state
     const reactions = await prisma.reviewReaction.findMany({
       where: { reviewId },
       include: { user: { select: { username: true } } },
@@ -64,7 +72,6 @@ router.put("/reactions/:reviewId", requireAuth, async (req, res, next) => {
 // COMMENTS
 // ============================================================
 
-// Helper: build a nested tree from flat comment rows
 function buildCommentTree(comments) {
   const map = {};
   const roots = [];
@@ -88,8 +95,6 @@ function buildCommentTree(comments) {
   return roots;
 }
 
-// GET /api/interactions/comments/:reviewId
-// Returns nested comment tree
 router.get("/comments/:reviewId", async (req, res, next) => {
   try {
     const comments = await prisma.reviewComment.findMany({
@@ -101,9 +106,6 @@ router.get("/comments/:reviewId", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// POST /api/interactions/comments/:reviewId
-// Body: { text, parentId? }
-// Creates a top-level comment (parentId omitted) or a reply (parentId set).
 router.post("/comments/:reviewId", requireAuth, async (req, res, next) => {
   try {
     const { reviewId } = req.params;
@@ -112,11 +114,9 @@ router.post("/comments/:reviewId", requireAuth, async (req, res, next) => {
       return res.status(400).json({ error: "Comment text required." });
     }
 
-    // Verify review exists
     const review = await prisma.review.findUnique({ where: { id: reviewId } });
     if (!review) return res.status(404).json({ error: "Review not found." });
 
-    // If parentId is provided, verify parent comment exists and belongs to same review
     if (parentId) {
       const parent = await prisma.reviewComment.findUnique({ where: { id: parentId } });
       if (!parent || parent.reviewId !== reviewId) {
@@ -133,6 +133,36 @@ router.post("/comments/:reviewId", requireAuth, async (req, res, next) => {
       },
       include: { user: { select: { username: true } } },
     });
+
+    // Notify review owner about the comment (if commenter isn't the owner)
+    try {
+      if (review.userId !== req.userId) {
+        await prisma.notification.create({
+          data: {
+            recipientId: review.userId,
+            actorId: req.userId,
+            type: parentId ? "reply" : "comment",
+            referenceId: reviewId,
+          },
+        });
+      }
+      // If this is a reply, also notify the parent comment author
+      if (parentId) {
+        const parentComment = await prisma.reviewComment.findUnique({ where: { id: parentId } });
+        if (parentComment && parentComment.userId !== req.userId && parentComment.userId !== review.userId) {
+          await prisma.notification.create({
+            data: {
+              recipientId: parentComment.userId,
+              actorId: req.userId,
+              type: "reply",
+              referenceId: reviewId,
+            },
+          });
+        }
+      }
+    } catch (notifErr) {
+      console.error("comment notification error:", notifErr.message);
+    }
 
     res.status(201).json({
       comment: {
