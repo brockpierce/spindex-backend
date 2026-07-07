@@ -97,9 +97,14 @@ router.get("/", async (req, res) => {
   if (search) {
     try {
       const ftsQuery = search.replace(/['"*^]/g, " ").trim() + "*";
+      // Also pull all aliases for the album's artist into an `_aliases`
+      // column so JS-side scoring can boost alias matches. Aliases are
+      // joined by artistName because Album has no artistId. The delimiter
+      // ||| avoids collision with alias text.
       const ftsResults = await prisma.$queryRawUnsafe(`
         SELECT a.id, a.title, a.artistName, a.releaseYear, a.releaseType,
-               a.coverArtUrl, a.musicbrainzId, a.mbRatingCount
+               a.coverArtUrl, a.musicbrainzId, a.mbRatingCount,
+               (SELECT GROUP_CONCAT(al.alias, '|||') FROM ArtistAlias al WHERE al.artistName = a.artistName) as _aliases
         FROM album_fts f
         INNER JOIN Album a ON a.id = f.id
         WHERE album_fts MATCH ?
@@ -136,15 +141,30 @@ router.get("/", async (req, res) => {
       let score = 0;
       const title = (a.title || "").toLowerCase();
       const artist = (a.artistName || "").toLowerCase();
+      const aliases = ((a._aliases || "").toLowerCase()).split("|||").filter(Boolean);
 
       // Artist name matching -- by far the strongest signal
       if (artist === s) score += 300;
       else if (artist.startsWith(s)) score += 200;
       else if (artist.includes(s)) score += 100;
 
+      // Alias matching -- treats a strong alias hit as if the artist matched,
+      // but weighted a hair lower since aliases can be fuzzier.
+      let bestAliasScore = 0;
+      for (const al of aliases) {
+        if (al === s) { bestAliasScore = Math.max(bestAliasScore, 260); break; }
+        if (al.startsWith(s)) bestAliasScore = Math.max(bestAliasScore, 170);
+        else if (al.includes(s)) bestAliasScore = Math.max(bestAliasScore, 80);
+      }
+      score += bestAliasScore;
+
+      // Consider the artist "matching" if either the primary name or an alias
+      // includes the search string -- lets the title-scoring below fire on
+      // romanized queries too.
+      const artistMatches = artist.includes(s) || aliases.some((al) => al.includes(s));
+
       // Title matching -- only boost if artist also matches
       // This prevents "The Beatles Story" outranking Abbey Road
-      const artistMatches = artist.includes(s);
       if (title === s) score += artistMatches ? 80 : 20;
       else if (title.startsWith(s)) score += artistMatches ? 40 : 10;
       else if (title.includes(s)) score += artistMatches ? 20 : 5;
@@ -161,7 +181,9 @@ router.get("/", async (req, res) => {
     });
 
   scored.sort((a, b) => b._score - a._score);
-  res.json({ albums: scored.slice(0, limit) });
+  // Strip the internal fields before returning
+  const results = scored.slice(0, limit).map(({ _score, _aliases, ...rest }) => rest);
+  res.json({ albums: results });
 });
 
 // GET /api/albums/:id
