@@ -193,15 +193,18 @@ router.get("/:id", async (req, res) => {
   if (!album) return res.status(404).json({ error: "Album not found." });
 
   if (!album.coverArtUrl && album.musicbrainzId) {
-    const url = await getCoverArtUrl(album.musicbrainzId);
-    const updated = await prisma.album.update({
-      where: { id: album.id },
-      // Store the literal string "none" rather than leaving it null, so we
-      // remember "we checked and there isn't one" and don't re-fetch on
-      // every single future view of an album with no cover art.
-      data: { coverArtUrl: url || "none" },
-    });
-    return res.json({ album: updated });
+    const result = await getCoverArtUrl(album.musicbrainzId);
+    // Only cache a definitive answer -- if CAA timed out or errored,
+    // leave coverArtUrl as null so a future view retries.
+    if (result.confirmed) {
+      const updated = await prisma.album.update({
+        where: { id: album.id },
+        data: { coverArtUrl: result.url || "none" },
+      });
+      return res.json({ album: updated });
+    }
+    // Transient failure: return album as-is (null coverArtUrl), retry later.
+    return res.json({ album });
   }
 
   res.json({ album });
