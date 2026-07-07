@@ -137,10 +137,6 @@ router.get("/", async (req, res) => {
   if (search) {
     try {
       const ftsQuery = search.replace(/['"*^]/g, " ").trim() + "*";
-      // Also pull all aliases for the album's artist into an `_aliases`
-      // column so JS-side scoring can boost alias matches. Aliases are
-      // joined by artistName because Album has no artistId. The delimiter
-      // ||| avoids collision with alias text.
       const ftsResults = await prisma.$queryRawUnsafe(`
         SELECT a.id, a.title, a.artistName, a.releaseYear, a.releaseType,
                a.coverArtUrl, a.musicbrainzId, a.mbRatingCount,
@@ -154,17 +150,27 @@ router.get("/", async (req, res) => {
       raw = ftsResults;
     } catch (ftsErr) {
       console.error("FTS search failed, falling back:", ftsErr.message);
-      raw = await prisma.album.findMany({
+      raw = [];
+    }
+    // Always also search the Album table directly for manually added albums
+    // (they may not be in FTS index) and merge, deduping by id.
+    try {
+      const manualResults = await prisma.album.findMany({
         where: {
+          createdByUserId: { not: null },
           OR: [
             { title: { contains: search } },
             { artistName: { contains: search } },
           ],
         },
-        take: limit * 3,
-        orderBy: [{ mbRatingCount: "desc" }],
+        take: 20,
       });
-    }
+      if (manualResults.length > 0) {
+        const existingIds = new Set(raw.map((r) => r.id));
+        const newOnes = manualResults.filter((r) => !existingIds.has(r.id));
+        raw = [...raw, ...newOnes];
+      }
+    } catch (e) { /* non-fatal */ }
   } else {
     raw = await prisma.album.findMany({
       take: limit,
@@ -320,13 +326,13 @@ router.post("/", requireAuth, async (req, res, next) => {
     // Aliases are empty for manually added albums; they can be added later
     // if the artist alias import runs and finds a match.
     try {
+      await prisma.$executeRawUnsafe(`DELETE FROM album_fts WHERE id = ?`, album.id);
       await prisma.$executeRawUnsafe(
-        `INSERT OR REPLACE INTO album_fts(id, title, artistName, aliases) VALUES (?, ?, ?, '')`,
+        `INSERT INTO album_fts(id, title, artistName, aliases) VALUES (?, ?, ?, '')`,
         album.id, album.title, album.artistName
       );
     } catch (ftsErr) {
       console.error("FTS insert failed for new album:", ftsErr.message);
-      // Non-fatal — album is still created, just won't appear in FTS search
     }
 
     res.status(201).json({ album });
