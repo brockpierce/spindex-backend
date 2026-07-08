@@ -110,7 +110,6 @@ model Review {
 
   user      User             @relation(fields: [userId], references: [id])
   album     Album            @relation(fields: [albumId], references: [id])
-  comments  ReviewComment[]
 
   @@unique([userId, albumId])
 }
@@ -135,7 +134,6 @@ model ReviewComment {
   parentId  String?
   createdAt DateTime @default(now())
 
-  review  Review          @relation(fields: [reviewId], references: [id], onDelete: Cascade)
   user    User            @relation(fields: [userId], references: [id])
   parent  ReviewComment?  @relation("CommentThread", fields: [parentId], references: [id])
   replies ReviewComment[] @relation("CommentThread")
