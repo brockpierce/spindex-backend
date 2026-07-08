@@ -159,6 +159,7 @@ router.get("/", async (req, res) => {
       'cmrb6cy240002um6rn0it2fw6', // This Is My Second Rodeo - Holidays in United States
       'cmrb6dsrv0003um6r3jxqqb5h', // Holidays in United States - Holidays in United States
       'cmrb6fpmk0004um6rzjbazp18', // Songs at West End Prep - Tal Castle
+      'cmrbh1w3e0000bp0dkzogpqqx', // The Promontory - Eyecandy
     ];
     try {
       const manualAlbums = await prisma.album.findMany({
@@ -331,6 +332,18 @@ router.post("/", requireAuth, async (req, res, next) => {
       },
     });
 
+    // Insert into FTS index so the album is immediately searchable.
+    // Aliases are empty for manually added albums; they can be added later
+    // if the artist alias import runs and finds a match.
+    try {
+      await prisma.$executeRawUnsafe(`DELETE FROM album_fts WHERE id = ?`, album.id);
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO album_fts(id, title, artistName, aliases) VALUES (?, ?, ?, '')`,
+        album.id, album.title, album.artistName
+      );
+    } catch (ftsErr) {
+      console.error("FTS insert failed for new album:", ftsErr.message);
+    }
 
     res.status(201).json({ album });
   } catch (e) { next(e); }
