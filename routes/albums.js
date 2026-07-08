@@ -331,18 +331,6 @@ router.post("/", requireAuth, async (req, res, next) => {
       },
     });
 
-    // Insert into FTS index so the album is immediately searchable.
-    // Aliases are empty for manually added albums; they can be added later
-    // if the artist alias import runs and finds a match.
-    try {
-      await prisma.$executeRawUnsafe(`DELETE FROM album_fts WHERE id = ?`, album.id);
-      await prisma.$executeRawUnsafe(
-        `INSERT INTO album_fts(id, title, artistName, aliases) VALUES (?, ?, ?, '')`,
-        album.id, album.title, album.artistName
-      );
-    } catch (ftsErr) {
-      console.error("FTS insert failed for new album:", ftsErr.message);
-    }
 
     res.status(201).json({ album });
   } catch (e) { next(e); }
