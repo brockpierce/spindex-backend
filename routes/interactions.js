@@ -179,4 +179,15 @@ router.post("/comments/:reviewId", requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// DELETE /api/interactions/comments/:commentId -- delete your own comment
+router.delete("/comments/:commentId", requireAuth, async (req, res, next) => {
+  try {
+    const comment = await prisma.reviewComment.findUnique({ where: { id: req.params.commentId } });
+    if (!comment) return res.status(404).json({ error: "Comment not found." });
+    if (comment.userId !== req.userId) return res.status(403).json({ error: "Not your comment." });
+    await prisma.reviewComment.delete({ where: { id: req.params.commentId } });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
 module.exports = router;
