@@ -22,6 +22,7 @@ model User {
   lists                List[]
   favorites            Favorite[]
   savedLists           SavedList[]
+  reviewReactions      ReviewReaction[]
   reviewComments       ReviewComment[]
   albumMixes           AlbumMix[]
   textPosts            TextPost[]
