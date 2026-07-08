@@ -155,10 +155,10 @@ router.get("/", async (req, res) => {
     // Manually added albums by ID — avoids full table scan on 2.6M rows.
     // Add new IDs here when albums are manually created.
     const MANUAL_ALBUM_IDS = [
-      'cmrb6ashp0000um6rlkdro0wo', // Adult Friend Finder
-      'cmrb6cy240002um6rn0it2fw6', // This Is My Second Rodeo
-      'cmrb6dsrv0003um6r3jxqqb5h', // Holidays in United States
-      'cmrb6fpmk0004um6rzjbazp18', // Songs at West End Prep (Tal Castle)
+      'cmrb6ashp0000um6rlkdro0wo', // Adult Friend Finder - Adult Friend Finder
+      'cmrb6cy240002um6rn0it2fw6', // This Is My Second Rodeo - Holidays in United States
+      'cmrb6dsrv0003um6r3jxqqb5h', // Holidays in United States - Holidays in United States
+      'cmrb6fpmk0004um6rzjbazp18', // Songs at West End Prep - Tal Castle
     ];
     try {
       const manualAlbums = await prisma.album.findMany({
@@ -232,10 +232,13 @@ router.get("/", async (req, res) => {
 
   // Append manual albums that matched but weren't in FTS results
   const manualMatches = (raw._manualMatches || []);
-  const slicedIds = new Set(sliced.map((r) => r.id));
-  const extraManual = manualMatches.filter((r) => !slicedIds.has(r.id));
+  // Dedup by id in case FTS index has duplicate entries
+  const seen = new Set();
+  const deduped = sliced.filter((r) => { if (seen.has(r.id)) return false; seen.add(r.id); return true; });
+  const dedupdIds = new Set(deduped.map((r) => r.id));
+  const extraManual = manualMatches.filter((r) => !dedupdIds.has(r.id));
 
-  res.json({ albums: [...extraManual, ...sliced] });
+  res.json({ albums: [...extraManual, ...deduped] });
 });
 
 // GET /api/albums/:id/tags -- read-only, public
