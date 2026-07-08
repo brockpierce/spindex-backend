@@ -22,7 +22,6 @@ model User {
   lists                List[]
   favorites            Favorite[]
   savedLists           SavedList[]
-  reviewReactions      ReviewReaction[]
   reviewComments       ReviewComment[]
   albumMixes           AlbumMix[]
   textPosts            TextPost[]
@@ -110,7 +109,6 @@ model Review {
 
   user      User             @relation(fields: [userId], references: [id])
   album     Album            @relation(fields: [albumId], references: [id])
-  reactions ReviewReaction[]
   comments  ReviewComment[]
 
   @@unique([userId, albumId])
@@ -123,7 +121,6 @@ model ReviewReaction {
   kind      String
   createdAt DateTime @default(now())
 
-  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id])
 
   @@unique([reviewId, userId])
