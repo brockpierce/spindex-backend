@@ -6,7 +6,7 @@ const { requireAuth, JWT_SECRET } = require("../middleware/auth");
 
 const router = express.Router();
 const BCRYPT_ROUNDS = 12;
-const FOUNDER_USERNAME = "brockpierce";
+const FOUNDER_USERNAME = "brock";
 
 function publicUser(user) {
   return {
