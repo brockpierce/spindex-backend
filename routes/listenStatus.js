@@ -38,10 +38,10 @@ router.get("/me", requireAuth, async (req, res, next) => {
 
 router.get("/user/:userId", async (req, res, next) => {
   try {
-    const rows = await prisma.listenStatus.findMany({
-      where: { userId: req.params.userId, status: "want_to_listen" }
-    });
-    res.json({ queue: rows.map((r) => r.albumId) });
+    const rows = await prisma.listenStatus.findMany({ where: { userId: req.params.userId } });
+    const queue = rows.filter((r) => r.status === "want_to_listen").map((r) => r.albumId);
+    const listenedCount = rows.filter((r) => r.status === "listened").length;
+    res.json({ queue, listenedCount });
   } catch (e) { next(e); }
 });
 
