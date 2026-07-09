@@ -36,4 +36,13 @@ router.get("/me", requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+router.get("/user/:userId", async (req, res, next) => {
+  try {
+    const rows = await prisma.listenStatus.findMany({
+      where: { userId: req.params.userId, status: "want_to_listen" }
+    });
+    res.json({ queue: rows.map((r) => r.albumId) });
+  } catch (e) { next(e); }
+});
+
 module.exports = router;
