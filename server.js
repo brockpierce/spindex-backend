@@ -1,8 +1,6 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const { execSync } = require("child_process");
-try { execSync(`sqlite3 /var/data/dev.db "PRAGMA journal_mode=WAL;"`, { timeout: 5000 }); console.log("WAL mode enabled"); } catch(e) { console.log("WAL mode skipped:", e.message); }
 
 const authRoutes = require("./routes/auth");
 const albumRoutes = require("./routes/albums");
