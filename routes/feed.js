@@ -32,6 +32,7 @@ function cardFromMixShare(share) {
     username: share.user.username,
     mixId: share.mixId,
     mixType: share.mixType,
+    caption: share.caption || "",
     date: share.createdAt,
   };
 }
