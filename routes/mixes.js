@@ -104,3 +104,19 @@ router.delete("/:id/albums/:albumId", requireAuth, async (req, res, next) => {
 });
 
 module.exports = router;
+
+// PUT /api/mixes/:id/reorder — reorder albums in a mix
+router.put("/:id/reorder", requireAuth, async (req, res, next) => {
+  try {
+    const { albumIds } = req.body;
+    if (!Array.isArray(albumIds)) return res.status(400).json({ error: "albumIds required." });
+    const mix = await prisma.albumMix.findUnique({ where: { id: req.params.id } });
+    if (!mix) return res.status(404).json({ error: "Mix not found." });
+    if (mix.userId !== req.userId) return res.status(403).json({ error: "Not your mix." });
+    // Update positions
+    await Promise.all(albumIds.map((albumId, position) =>
+      prisma.albumMixItem.updateMany({ where: { mixId: req.params.id, albumId }, data: { position } })
+    ));
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
