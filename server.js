@@ -45,6 +45,7 @@ app.use("/api/mixes", require("./routes/mixes"));
 app.use("/api/notifications", require("./routes/notifications"));
 app.use("/api/posts", require("./routes/posts"));
 app.use("/api/mix-shares", require("./routes/mixShares"));
+app.use("/api/messages", require("./routes/messages"));
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
