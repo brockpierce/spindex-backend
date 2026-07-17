@@ -65,6 +65,7 @@ model Album {
 
   reviews      Review[]
   listenStatus ListenStatus[]
+  albumsOfTheDay AlbumOfTheDay[]
   listItems    ListItem[]
   favorites    Favorite[]
   albumTags    AlbumTag[]
