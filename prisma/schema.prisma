@@ -29,6 +29,8 @@ model User {
   mixShares            MixShare[]
   conversations        ConversationParticipant[]
   sentMessages         DirectMessage[]
+  albumsOfTheDay       AlbumOfTheDay[]
+  interviews           Interview[]
   notificationsReceived Notification[] @relation("NotifRecipient")
   notificationsSent     Notification[] @relation("NotifActor")
 
@@ -314,4 +316,32 @@ model DirectMessage {
   sender       User         @relation(fields: [senderId], references: [id])
 
   @@index([conversationId, createdAt])
+}
+model AlbumOfTheDay {
+  id          String   @id @default(cuid())
+  albumId     String
+  staffRating Int
+  pullQuote   String
+  body        String
+  date        String   // "2026-07-17"
+  createdAt   DateTime @default(now())
+  authorId    String
+
+  author User  @relation(fields: [authorId], references: [id])
+  album  Album @relation(fields: [albumId], references: [id])
+
+  @@index([date])
+}
+
+model Interview {
+  id          String   @id @default(cuid())
+  title       String
+  body        String
+  albumIds    String   // comma-separated album IDs
+  publishedAt DateTime @default(now())
+  authorId    String
+
+  author User @relation(fields: [authorId], references: [id])
+
+  @@index([publishedAt])
 }
