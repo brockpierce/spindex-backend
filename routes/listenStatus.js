@@ -36,12 +36,13 @@ router.get("/me", requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /api/listen-status/user/:userId — public count for another user's profile
 router.get("/user/:userId", async (req, res, next) => {
   try {
-    const rows = await prisma.listenStatus.findMany({ where: { userId: req.params.userId } });
-    const queue = rows.filter((r) => r.status === "want_to_listen").map((r) => r.albumId);
-    const listenedCount = rows.filter((r) => r.status === "listened").length;
-    res.json({ queue, listenedCount });
+    const listenedCount = await prisma.listenStatus.count({
+      where: { userId: req.params.userId, status: "listened" },
+    });
+    res.json({ listenedCount });
   } catch (e) { next(e); }
 });
 
