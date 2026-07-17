@@ -12,7 +12,7 @@ router.get("/conversations", requireAuth, async (req, res, next) => {
         conversation: {
           include: {
             participants: {
-              include: { user: { select: { id: true, username: true, avatarUrl: true } } }
+              include: { user: { select: { id: true, username: true, displayName: true, avatarUrl: true } } }
             },
             messages: {
               orderBy: { createdAt: "desc" },
@@ -53,7 +53,7 @@ router.post("/conversations", requireAuth, async (req, res, next) => {
     const { username } = req.body;
     if (!username) return res.status(400).json({ error: "username required." });
 
-    const otherUser = await prisma.user.findFirst({ where: { username }, select: { id: true, username: true, avatarUrl: true } });
+    const otherUser = await prisma.user.findFirst({ where: { username }, select: { id: true, username: true, displayName: true, avatarUrl: true } });
     if (!otherUser) return res.status(404).json({ error: "User not found." });
     if (otherUser.id === req.userId) return res.status(400).json({ error: "Cannot message yourself." });
 
@@ -65,7 +65,7 @@ router.post("/conversations", requireAuth, async (req, res, next) => {
           { participants: { some: { userId: otherUser.id } } },
         ]
       },
-      include: { participants: { include: { user: { select: { id: true, username: true, avatarUrl: true } } } } }
+      include: { participants: { include: { user: { select: { id: true, username: true, displayName: true, avatarUrl: true } } } } }
     });
 
     if (existing) return res.json({ conversation: { id: existing.id, otherUser } });
@@ -100,7 +100,7 @@ router.get("/conversations/:id", requireAuth, async (req, res, next) => {
     // Get other participant
     const allParticipants = await prisma.conversationParticipant.findMany({
       where: { conversationId: req.params.id },
-      include: { user: { select: { id: true, username: true, avatarUrl: true } } }
+      include: { user: { select: { id: true, username: true, displayName: true, avatarUrl: true } } }
     });
     const otherUser = allParticipants.find((p) => p.userId !== req.userId)?.user;
 
