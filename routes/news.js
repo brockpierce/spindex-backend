@@ -11,10 +11,31 @@ async function requireAdmin(req, res, next) {
   next();
 }
 
+// GET /api/news/featured-mix
+router.get("/featured-mix", async (req, res, next) => {
+  try {
+    // Store featured mix ID in a simple key-value via a single-row table approach
+    // We use a special AlbumOfTheDay entry with albumId="featured-mix" as a hack-free singleton
+    const row = await prisma.$queryRawUnsafe('SELECT value FROM FeaturedMix WHERE key = "staff_mix_id" LIMIT 1').catch(() => []);
+    const mixId = row[0]?.value || null;
+    res.json({ mixId });
+  } catch (e) { res.json({ mixId: null }); }
+});
+
+// PUT /api/news/featured-mix (admin)
+router.put("/featured-mix", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const { mixId } = req.body;
+    await prisma.$executeRawUnsafe('CREATE TABLE IF NOT EXISTS FeaturedMix (key TEXT PRIMARY KEY, value TEXT)');
+    await prisma.$executeRawUnsafe('INSERT OR REPLACE INTO FeaturedMix (key, value) VALUES ("staff_mix_id", ?)', mixId || "");
+    res.json({ ok: true, mixId });
+  } catch (e) { next(e); }
+});
+
 // GET /api/news — latest album of the day + recent interviews
 router.get("/", async (req, res, next) => {
   try {
-    const [aotd, interviews] = await Promise.all([
+    const [aotd, interviews, featuredMixRow] = await Promise.all([
       prisma.albumOfTheDay.findFirst({
         orderBy: { date: "desc" },
         include: { album: true, author: { select: { username: true } } },
@@ -24,8 +45,10 @@ router.get("/", async (req, res, next) => {
         take: 10,
         include: { author: { select: { username: true } } },
       }),
+      prisma.$queryRawUnsafe('SELECT value FROM FeaturedMix WHERE key = "staff_mix_id" LIMIT 1').catch(() => []),
     ]);
-    res.json({ aotd: aotd || null, interviews });
+    const featuredMixId = featuredMixRow[0]?.value || null;
+    res.json({ aotd: aotd || null, interviews, featuredMixId });
   } catch (e) { next(e); }
 });
 
