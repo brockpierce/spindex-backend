@@ -18,6 +18,7 @@ router.get("/", requireAuth, async (req, res, next) => {
       id: m.id,
       title: m.title,
       description: m.description || "",
+      isPublic: m.isPublic !== false,
       albums: m.items.map((item) => ({ albumId: item.albumId, note: item.note || "" })),
     }));
     res.json({ mixes: shaped });
@@ -50,6 +51,25 @@ router.delete("/:id", requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /api/mixes/:id — single mix by ID (public-facing; used by editorial + feed shares)
+router.get("/:id", async (req, res, next) => {
+  try {
+    const m = await prisma.albumMix.findUnique({
+      where: { id: req.params.id },
+      include: { items: { orderBy: { position: "asc" } }, user: { select: { username: true } } },
+    });
+    if (!m) return res.status(404).json({ error: "Mix not found." });
+    res.json({ mix: {
+      id: m.id,
+      title: m.title,
+      description: m.description || "",
+      isPublic: m.isPublic !== false,
+      owner: m.user ? m.user.username : null,
+      albums: m.items.map((item) => ({ albumId: item.albumId, note: item.note || "" })),
+    } });
+  } catch (e) { next(e); }
+});
+
 // PUT /api/mixes/:id — update title/description
 router.put("/:id", requireAuth, async (req, res, next) => {
   try {
@@ -57,15 +77,16 @@ router.put("/:id", requireAuth, async (req, res, next) => {
     if (!mix || mix.userId !== req.userId) {
       return res.status(404).json({ error: "Mix not found." });
     }
-    const { title, description } = req.body;
+    const { title, description, isPublic } = req.body;
     const updated = await prisma.albumMix.update({
       where: { id: req.params.id },
       data: {
         title: title !== undefined ? title.trim() : mix.title,
         description: description !== undefined ? description : mix.description,
+        ...(isPublic !== undefined ? { isPublic: Boolean(isPublic) } : {}),
       },
     });
-    res.json({ mix: { id: updated.id, title: updated.title, description: updated.description || "" } });
+    res.json({ mix: { id: updated.id, title: updated.title, description: updated.description || "", isPublic: updated.isPublic !== false } });
   } catch (e) { next(e); }
 });
 
