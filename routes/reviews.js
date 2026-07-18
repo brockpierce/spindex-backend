@@ -21,6 +21,17 @@ function publicReview(review) {
   };
 }
 
+// GET /api/reviews/community-average — site-wide average of all ratings
+router.get("/community-average", async (req, res, next) => {
+  try {
+    const result = await prisma.review.aggregate({
+      _avg: { rating: true },
+      _count: { rating: true },
+    });
+    res.json({ average: result._avg.rating, count: result._count.rating });
+  } catch (e) { res.json({ average: null, count: 0 }); }
+});
+
 router.put("/:albumId", requireAuth, async (req, res, next) => {
   try {
     const { albumId } = req.params;
