@@ -51,6 +51,24 @@ router.delete("/:id", requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /api/mixes/user/:userId — another user's PUBLIC album mixes (for profile pages)
+router.get("/user/:userId", async (req, res, next) => {
+  try {
+    const mixes = await prisma.albumMix.findMany({
+      where: { userId: req.params.userId, isPublic: true },
+      include: { items: { orderBy: { position: "asc" } } },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json({ mixes: mixes.map((m) => ({
+      id: m.id,
+      title: m.title,
+      description: m.description || "",
+      isPublic: true,
+      albums: m.items.map((i) => ({ albumId: i.albumId, note: i.note || "" })),
+    })) });
+  } catch (e) { next(e); }
+});
+
 // GET /api/mixes/:id — single mix by ID (public-facing; used by editorial + feed shares)
 router.get("/:id", async (req, res, next) => {
   try {
