@@ -22,6 +22,7 @@ model User {
   lists                List[]
   favorites            Favorite[]
   savedLists           SavedList[]
+  savedMixes           SavedMix[]
   reviewReactions      ReviewReaction[]
   reviewComments       ReviewComment[]
   albumMixes           AlbumMix[]
@@ -156,8 +157,9 @@ model AlbumMix {
   updatedAt   DateTime @updatedAt
   isPublic    Boolean  @default(true)
 
-  user  User           @relation(fields: [userId], references: [id])
-  items AlbumMixItem[]
+  user    User           @relation(fields: [userId], references: [id])
+  items   AlbumMixItem[]
+  savedBy SavedMix[]
 }
 
 model AlbumMixItem {
@@ -269,6 +271,18 @@ model SavedList {
   list List @relation(fields: [listId], references: [id])
 
   @@unique([userId, listId])
+}
+
+model SavedMix {
+  id        String   @id @default(cuid())
+  userId    String
+  mixId     String
+  createdAt DateTime @default(now())
+
+  user User     @relation(fields: [userId], references: [id])
+  mix  AlbumMix @relation(fields: [mixId], references: [id])
+
+  @@unique([userId, mixId])
 }
 
 model Favorite {

@@ -69,6 +69,26 @@ router.get("/user/:userId", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /api/mixes/saved — mixes the current user has saved (must precede /:id)
+router.get("/saved", requireAuth, async (req, res, next) => {
+  try {
+    const saved = await prisma.savedMix.findMany({
+      where: { userId: req.userId },
+      include: { mix: { include: { items: { orderBy: { position: "asc" } }, user: { select: { username: true } } } } },
+      orderBy: { createdAt: "desc" },
+    });
+    const mixes = saved.filter((s) => s.mix).map((s) => ({
+      id: s.mix.id,
+      title: s.mix.title,
+      description: s.mix.description || "",
+      isPublic: s.mix.isPublic !== false,
+      owner: s.mix.user ? s.mix.user.username : null,
+      albums: s.mix.items.map((item) => ({ albumId: item.albumId, note: item.note || "" })),
+    }));
+    res.json({ mixes });
+  } catch (e) { next(e); }
+});
+
 // GET /api/mixes/:id — single mix by ID (public-facing; used by editorial + feed shares)
 router.get("/:id", async (req, res, next) => {
   try {
@@ -145,6 +165,29 @@ router.delete("/:id/albums/:albumId", requireAuth, async (req, res, next) => {
 module.exports = router;
 
 // PUT /api/mixes/:id/reorder — reorder albums in a mix
+// POST /api/mixes/:id/save — save another user's mix
+router.post("/:id/save", requireAuth, async (req, res, next) => {
+  try {
+    const mix = await prisma.albumMix.findUnique({ where: { id: req.params.id } });
+    if (!mix) return res.status(404).json({ error: "Mix not found." });
+    if (mix.userId === req.userId) return res.status(400).json({ error: "Can't save your own mix." });
+    await prisma.savedMix.upsert({
+      where: { userId_mixId: { userId: req.userId, mixId: req.params.id } },
+      create: { userId: req.userId, mixId: req.params.id },
+      update: {},
+    });
+    res.json({ ok: true, saved: true });
+  } catch (e) { next(e); }
+});
+
+// DELETE /api/mixes/:id/save — unsave
+router.delete("/:id/save", requireAuth, async (req, res, next) => {
+  try {
+    await prisma.savedMix.deleteMany({ where: { userId: req.userId, mixId: req.params.id } });
+    res.json({ ok: true, saved: false });
+  } catch (e) { next(e); }
+});
+
 router.put("/:id/reorder", requireAuth, async (req, res, next) => {
   try {
     const { albumIds } = req.body;
