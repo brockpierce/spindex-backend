@@ -43,7 +43,7 @@ router.put("/:albumId", requireAuth, async (req, res, next) => {
     if (!album) return res.status(404).json({ error: "Album not found." });
     const review = await prisma.review.upsert({
       where: { userId_albumId: { userId: req.userId, albumId } },
-      update: { rating, reviewText, favTrack, leastFavTrack },
+      update: { rating, reviewText, favTrack, leastFavTrack, createdAt: new Date() },
       create: { userId: req.userId, albumId, rating, reviewText, favTrack, leastFavTrack },
     });
     await prisma.listenStatus.upsert({
