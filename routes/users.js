@@ -1,7 +1,7 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
 const jwt = require("jsonwebtoken");
-const { JWT_SECRET } = require("../middleware/auth");
+const { JWT_SECRET, requireAuth } = require("../middleware/auth");
 
 const router = express.Router();
 
