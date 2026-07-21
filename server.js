@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const rateLimit = require("express-rate-limit");
 
 const authRoutes = require("./routes/auth");
 const albumRoutes = require("./routes/albums");
@@ -30,7 +31,28 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "10mb" }));
 
-app.use("/api/auth", authRoutes);
+// Trust Render's proxy so rate limiting sees real client IPs
+app.set("trust proxy", 1);
+
+// Strict limiter on auth (brute-force / spam-signup protection)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 min
+  max: 20,                  // 20 auth attempts per IP per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many attempts. Please try again in a few minutes." },
+});
+
+// General API limiter (abuse safety net)
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 500,                 // 500 requests per IP per window
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use("/api/", apiLimiter);
+
+app.use("/api/auth", authLimiter, authRoutes);
 app.use("/api/albums", albumRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/listen-status", listenStatusRoutes);
