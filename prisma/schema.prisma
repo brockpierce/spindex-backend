@@ -15,6 +15,12 @@ model User {
   displayName  String
   bio          String?
   avatarUrl    String?
+  profileTheme String?
+  age          String?
+  town         String?
+  country      String?
+  mood         String?
+  interests    String?
   createdAt    DateTime @default(now())
 
   reviews              Review[]

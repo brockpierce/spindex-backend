@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN "age" TEXT;
+ALTER TABLE "User" ADD COLUMN "country" TEXT;
+ALTER TABLE "User" ADD COLUMN "interests" TEXT;
+ALTER TABLE "User" ADD COLUMN "mood" TEXT;
+ALTER TABLE "User" ADD COLUMN "profileTheme" TEXT;
+ALTER TABLE "User" ADD COLUMN "town" TEXT;

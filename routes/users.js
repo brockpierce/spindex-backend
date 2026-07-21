@@ -12,6 +12,12 @@ function publicUser(user, followedIds = new Set()) {
     displayName: user.displayName,
     bio: user.bio,
     avatarUrl: user.avatarUrl,
+    profileTheme: user.profileTheme || null,
+    age: user.age || null,
+    town: user.town || null,
+    country: user.country || null,
+    mood: user.mood || null,
+    interests: user.interests || null,
     isFollowing: followedIds.has(user.id),
     followerCount: user._count?.followers || 0,
     followingCount: user._count?.following || 0,
@@ -39,6 +45,24 @@ router.get("/", async (req, res, next) => {
     });
     const followedIds = await getFollowedIds(req);
     res.json({ users: users.map((u) => publicUser(u, followedIds)) });
+  } catch (e) { next(e); }
+});
+
+// PUT /api/users/profile — update the logged-in user's profile + theme + info fields
+router.put("/profile", requireAuth, async (req, res, next) => {
+  try {
+    const { profileTheme, age, town, country, mood, interests, bio, displayName } = req.body;
+    const data = {};
+    if (profileTheme !== undefined) data.profileTheme = profileTheme || null;
+    if (age !== undefined) data.age = age || null;
+    if (town !== undefined) data.town = town || null;
+    if (country !== undefined) data.country = country || null;
+    if (mood !== undefined) data.mood = mood || null;
+    if (interests !== undefined) data.interests = interests || null;
+    if (bio !== undefined) data.bio = bio || null;
+    if (displayName !== undefined && displayName.trim()) data.displayName = displayName.trim();
+    const user = await prisma.user.update({ where: { id: req.userId }, data });
+    res.json({ user: publicUser(user) });
   } catch (e) { next(e); }
 });
 
