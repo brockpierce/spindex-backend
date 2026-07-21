@@ -1,5 +1,6 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
+const { notifyMentions } = require("../lib/notifyMentions");
 const { requireAuth } = require("../middleware/auth");
 
 const router = express.Router();
@@ -51,6 +52,7 @@ router.put("/:albumId", requireAuth, async (req, res, next) => {
       update: { status: "listened" },
       create: { userId: req.userId, albumId, status: "listened" },
     });
+    await notifyMentions(reviewText, req.userId, review.id);
     res.json({ review: publicReview(review) });
   } catch (e) { next(e); }
 });

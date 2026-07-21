@@ -1,5 +1,6 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
+const { notifyMentions } = require("../lib/notifyMentions");
 const { requireAuth } = require("../middleware/auth");
 const router = express.Router();
 
@@ -27,6 +28,7 @@ router.post("/", requireAuth, async (req, res, next) => {
       data: { userId: req.userId, text: text.trim() },
       include: { user: { select: { username: true, displayName: true, avatarUrl: true } } },
     });
+    await notifyMentions(post.text, req.userId, post.id);
     res.status(201).json({ post });
   } catch (e) { next(e); }
 });

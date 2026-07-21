@@ -1,5 +1,6 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
+const { notifyMentions } = require("../lib/notifyMentions");
 const { requireAuth } = require("../middleware/auth");
 const router = express.Router();
 
@@ -137,6 +138,7 @@ router.post("/comments/:reviewId", requireAuth, async (req, res, next) => {
       },
       include: { user: { select: { username: true } } },
     });
+    await notifyMentions(text, req.userId, reviewId);
 
     // Notify post owner
     try {
