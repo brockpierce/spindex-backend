@@ -16,6 +16,7 @@ model User {
   bio          String?
   avatarUrl    String?
   profileTheme String?
+  accentColor  String?
   age          String?
   town         String?
   country      String?

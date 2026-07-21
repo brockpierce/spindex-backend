@@ -13,6 +13,7 @@ function publicUser(user, followedIds = new Set()) {
     bio: user.bio,
     avatarUrl: user.avatarUrl,
     profileTheme: user.profileTheme || null,
+    accentColor: user.accentColor || null,
     age: user.age || null,
     town: user.town || null,
     country: user.country || null,
@@ -51,9 +52,10 @@ router.get("/", async (req, res, next) => {
 // PUT /api/users/profile — update the logged-in user's profile + theme + info fields
 router.put("/profile", requireAuth, async (req, res, next) => {
   try {
-    const { profileTheme, age, town, country, mood, interests, bio, displayName } = req.body;
+    const { profileTheme, accentColor, age, town, country, mood, interests, bio, displayName } = req.body;
     const data = {};
     if (profileTheme !== undefined) data.profileTheme = profileTheme || null;
+    if (accentColor !== undefined) data.accentColor = accentColor || null;
     if (age !== undefined) data.age = age || null;
     if (town !== undefined) data.town = town || null;
     if (country !== undefined) data.country = country || null;
