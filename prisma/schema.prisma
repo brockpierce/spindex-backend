@@ -18,6 +18,7 @@ model User {
   profileTheme String?
   accentColor  String?
   pageBackground String?
+  profileDrawing String?
   age          String?
   town         String?
   country      String?
