@@ -12,6 +12,7 @@ const listRoutes = require("./routes/lists");
 const followRoutes = require("./routes/follows");
 const feedRoutes = require("./routes/feed");
 const userRoutes = require("./routes/users");
+const guestbookRoutes = require("./routes/guestbook");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -61,6 +62,7 @@ app.use("/api/lists", listRoutes);
 app.use("/api/follows", followRoutes);
 app.use("/api/feed", feedRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/guestbook", guestbookRoutes);
 app.use("/api/tags", require("./routes/tags"));
 app.use("/api/interactions", require("./routes/interactions"));
 app.use("/api/mixes", require("./routes/mixes"));
