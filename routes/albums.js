@@ -313,6 +313,50 @@ router.get("/:id", async (req, res) => {
   res.json({ album });
 });
 
+// POST /api/albums/admin-add
+router.post("/admin-add", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    let { title, artistName, releaseYear, releaseType, coverArtUrl, musicbrainzId } = req.body;
+    title = (title || "").trim();
+    artistName = (artistName || "").trim();
+    coverArtUrl = (coverArtUrl || "").trim() || null;
+    musicbrainzId = (musicbrainzId || "").trim() || null;
+    if (!title || !artistName) {
+      return res.status(400).json({ error: "Title and artist name are required." });
+    }
+    if (musicbrainzId) {
+      const existing = await prisma.album.findUnique({ where: { musicbrainzId } });
+      if (existing) return res.json({ album: existing, existed: true });
+    }
+    if (musicbrainzId && !coverArtUrl) {
+      try {
+        const result = await getCoverArtUrl(musicbrainzId);
+        if (result && result.confirmed && result.url) coverArtUrl = result.url;
+      } catch (e) {}
+    }
+    const album = await prisma.album.create({
+      data: {
+        title, artistName,
+        releaseYear: releaseYear ? parseInt(releaseYear, 10) || null : null,
+        releaseType: releaseType || "Album",
+        coverArtUrl: coverArtUrl || null,
+        musicbrainzId: musicbrainzId || null,
+        createdByUserId: req.userId,
+      },
+    });
+    try {
+      await prisma.$executeRawUnsafe(`DELETE FROM album_fts WHERE id = ?`, album.id);
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO album_fts(id, title, artistName, aliases) VALUES (?, ?, ?, '')`,
+        album.id, album.title, album.artistName
+      );
+    } catch (ftsErr) {
+      console.error("FTS insert failed:", ftsErr.message);
+    }
+    res.json({ album });
+  } catch (e) { next(e); }
+});
+
 // POST /api/albums
 // Manual album creation for anything MusicBrainz doesn't have.
 router.post("/", requireAuth, async (req, res, next) => {
