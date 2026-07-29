@@ -70,7 +70,6 @@ model Album {
   coverArtUrl     String?
   musicbrainzId   String?  @unique
   mbRatingCount   Int?     @default(0)
-  featuredRank    Int?
   createdByUserId String?
   createdAt       DateTime @default(now())
 

@@ -118,44 +118,12 @@ const CURATED_TRENDING_IDS = [
 
 router.get("/trending", async (req, res, next) => {
   try {
-    // Featured albums (admin-curated) ordered by featuredRank. Falls back to the
-    // legacy CURATED_TRENDING_IDS list if no albums have been featured yet.
-    let albums = await prisma.album.findMany({
-      where: { featuredRank: { not: null } },
-      orderBy: { featuredRank: "asc" },
-    });
-    if (albums.length === 0) {
-      const legacy = await prisma.album.findMany({ where: { id: { in: CURATED_TRENDING_IDS } } });
-      albums = CURATED_TRENDING_IDS.map((id) => legacy.find((a) => a.id === id)).filter(Boolean);
-    }
-    res.json({ albums });
-  } catch (e) { next(e); }
-});
-
-// GET /api/albums/featured — public: the admin-curated featured list (same as trending source)
-router.get("/featured", async (req, res, next) => {
-  try {
     const albums = await prisma.album.findMany({
-      where: { featuredRank: { not: null } },
-      orderBy: { featuredRank: "asc" },
+      where: { id: { in: CURATED_TRENDING_IDS } },
     });
-    res.json({ albums });
-  } catch (e) { next(e); }
-});
-
-// PUT /api/albums/featured — admin only: set the ordered featured list.
-// Body: { albumIds: [id, id, ...] } in display order. Clears previous featured set.
-router.put("/featured", requireAuth, requireAdmin, async (req, res, next) => {
-  try {
-    const albumIds = Array.isArray(req.body.albumIds) ? req.body.albumIds : [];
-    // Clear all existing featured ranks
-    await prisma.album.updateMany({ where: { featuredRank: { not: null } }, data: { featuredRank: null } });
-    // Assign new ranks by index
-    for (let i = 0; i < albumIds.length; i++) {
-      await prisma.album.update({ where: { id: albumIds[i] }, data: { featuredRank: i } }).catch(() => {});
-    }
-    const albums = await prisma.album.findMany({ where: { featuredRank: { not: null } }, orderBy: { featuredRank: "asc" } });
-    res.json({ ok: true, albums });
+    // Preserve the curated order
+    const ordered = CURATED_TRENDING_IDS.map((id) => albums.find((a) => a.id === id)).filter(Boolean);
+    res.json({ albums: ordered });
   } catch (e) { next(e); }
 });
 
