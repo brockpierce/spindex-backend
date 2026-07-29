@@ -63,6 +63,7 @@ app.use("/api/follows", followRoutes);
 app.use("/api/feed", feedRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/guestbook", guestbookRoutes);
+app.use("/api/song-reviews", require("./routes/songReviews"));
 app.use("/api/tags", require("./routes/tags"));
 app.use("/api/interactions", require("./routes/interactions"));
 app.use("/api/mixes", require("./routes/mixes"));
