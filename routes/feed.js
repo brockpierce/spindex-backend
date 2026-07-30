@@ -37,19 +37,6 @@ function cardFromMixShare(share) {
   };
 }
 
-function cardFromSongReview(sr) {
-  return {
-    itemType: "songReview",
-    id: sr.id,
-    username: sr.user.username,
-    albumId: sr.albumId,
-    songTitle: sr.songTitle,
-    rating: sr.rating,
-    text: sr.reviewText,
-    date: sr.createdAt,
-  };
-}
-
 // GET /api/feed — personal feed (reviews + text posts from people you follow)
 router.get("/", requireAuth, async (req, res, next) => {
   try {
@@ -57,7 +44,7 @@ router.get("/", requireAuth, async (req, res, next) => {
     const follows = await prisma.follow.findMany({ where: { followerId: userId } });
     const followedIds = follows.map((f) => f.followedId);
 
-    const [reviews, textPosts, mixShares, songReviews] = await Promise.all([
+    const [reviews, textPosts, mixShares] = await Promise.all([
       followedIds.length
         ? prisma.review.findMany({ where: { userId: { in: followedIds } }, include: { user: true }, orderBy: { createdAt: "desc" }, take: 50 })
         : [],
@@ -67,16 +54,12 @@ router.get("/", requireAuth, async (req, res, next) => {
       followedIds.length
         ? prisma.mixShare.findMany({ where: { userId: { in: followedIds } }, include: { user: true }, orderBy: { createdAt: "desc" }, take: 20 })
         : [],
-      followedIds.length
-        ? prisma.songReview.findMany({ where: { userId: { in: followedIds } }, include: { user: true }, orderBy: { createdAt: "desc" }, take: 50 }).catch(() => [])
-        : [],
     ]);
 
     const feed = [
       ...reviews.map(cardFromReview),
       ...textPosts.map(cardFromTextPost),
       ...mixShares.map(cardFromMixShare),
-      ...(songReviews || []).map(cardFromSongReview),
     ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 50);
 
     res.json({ feed });
@@ -88,7 +71,7 @@ router.get("/public", requireAuth, async (req, res, next) => {
   try {
     const limit = Math.min(parseInt(req.query.limit || "50", 10), 100);
 
-    const [reviews, textPosts, mixShares, songReviews] = await Promise.all([
+    const [reviews, textPosts, mixShares] = await Promise.all([
       prisma.review.findMany({
         where: { reviewText: { not: null } },
         include: { user: true },
@@ -105,18 +88,12 @@ router.get("/public", requireAuth, async (req, res, next) => {
         orderBy: { createdAt: "desc" },
         take: 20,
       }),
-      prisma.songReview.findMany({
-        include: { user: true },
-        orderBy: { createdAt: "desc" },
-        take: limit,
-      }).catch(() => []),
     ]);
 
     const feed = [
       ...reviews.map(cardFromReview),
       ...textPosts.map(cardFromTextPost),
       ...mixShares.map(cardFromMixShare),
-      ...(songReviews || []).map(cardFromSongReview),
     ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, limit);
 
     res.json({ feed });
