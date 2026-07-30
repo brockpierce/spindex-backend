@@ -11,6 +11,8 @@ function cardFromReview(review) {
     albumId: review.albumId,
     rating: review.rating,
     text: review.reviewText,
+    favTrack: review.favTrack || null,
+    leastFavTrack: review.leastFavTrack || null,
     date: review.createdAt,
   };
 }
