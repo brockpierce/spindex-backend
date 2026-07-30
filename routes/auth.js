@@ -3,6 +3,11 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const prisma = require("../lib/prisma");
 const { requireAuth, JWT_SECRET } = require("../middleware/auth");
+const { Resend } = require("resend");
+
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+// Switch RESET_FROM to "noteblock <noreply@mynoteblock.com>" once the domain is verified in Resend.
+const RESET_FROM = process.env.RESET_FROM || "noteblock <onboarding@resend.dev>";
 
 const router = express.Router();
 const BCRYPT_ROUNDS = 12;
@@ -69,6 +74,81 @@ router.post("/login", async (req, res) => {
 
 // POST /api/auth/logout -- client just deletes the token, nothing to do server-side
 router.post("/logout", (req, res) => res.json({ ok: true }));
+
+// POST /api/auth/forgot-password  { email }
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "Email is required." });
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    // Always respond success (do not reveal whether the email is registered)
+    if (user) {
+      const code = String(Math.floor(100000 + Math.random() * 900000)); // 6 digits
+      const expiry = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { resetToken: code, resetTokenExpiry: expiry },
+      });
+
+      if (resend) {
+        try {
+          await resend.emails.send({
+            from: RESET_FROM,
+            to: email,
+            subject: "Your noteblock password reset code",
+            text: `Your password reset code is ${code}. It expires in 15 minutes. If you did not request this, you can ignore this email.`,
+            html: `<p>Your password reset code is:</p><p style="font-size:28px;font-weight:700;letter-spacing:4px;">${code}</p><p>It expires in 15 minutes. If you did not request this, you can ignore this email.</p>`,
+          });
+        } catch (mailErr) {
+          console.error("reset email send error:", mailErr.message);
+        }
+      } else {
+        console.warn("RESEND_API_KEY not set — reset code for", email, "is", code);
+      }
+    }
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("forgot-password error:", err.message);
+    return res.status(500).json({ error: "Something went wrong." });
+  }
+});
+
+// POST /api/auth/reset-password  { email, code, newPassword }
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { email, code, newPassword } = req.body;
+    if (!email || !code || !newPassword) {
+      return res.status(400).json({ error: "Email, code, and new password are all required." });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: "Password must be at least 8 characters." });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user || !user.resetToken || !user.resetTokenExpiry) {
+      return res.status(400).json({ error: "Invalid or expired code." });
+    }
+    if (user.resetToken !== String(code)) {
+      return res.status(400).json({ error: "Invalid or expired code." });
+    }
+    if (new Date(user.resetTokenExpiry) < new Date()) {
+      return res.status(400).json({ error: "This code has expired. Request a new one." });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash, resetToken: null, resetTokenExpiry: null },
+    });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("reset-password error:", err.message);
+    return res.status(500).json({ error: "Something went wrong." });
+  }
+});
 
 // GET /api/auth/me
 router.get("/me", async (req, res) => {
