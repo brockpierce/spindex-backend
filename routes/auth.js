@@ -27,6 +27,31 @@ function makeToken(userId) {
   return jwt.sign({ userId }, JWT_SECRET, { expiresIn: "30d" });
 }
 
+// Generate a 6-digit code, save it to the user as a verify token (24h expiry), and email it.
+async function sendVerificationCode(user) {
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { verifyToken: code, verifyTokenExpiry: expiry },
+  });
+  if (resend) {
+    try {
+      await resend.emails.send({
+        from: RESET_FROM,
+        to: user.email,
+        subject: "Verify your noteblock email",
+        text: `Welcome to noteblock! Your verification code is ${code}. It expires in 24 hours.`,
+        html: `<p>Welcome to noteblock!</p><p>Your verification code is:</p><p style="font-size:28px;font-weight:700;letter-spacing:4px;">${code}</p><p>It expires in 24 hours.</p>`,
+      });
+    } catch (mailErr) {
+      console.error("verification email send error:", mailErr.message);
+    }
+  } else {
+    console.warn("RESEND_API_KEY not set — verify code for", user.email, "is", code);
+  }
+}
+
 // POST /api/auth/signup
 router.post("/signup", async (req, res) => {
   const { email, password, username, displayName } = req.body;
@@ -58,6 +83,8 @@ router.post("/signup", async (req, res) => {
     console.error("Auto-follow founder failed:", err.message);
   }
 
+  try { await sendVerificationCode(user); } catch (e) { console.error("send verify on signup failed:", e.message); }
+
   res.status(201).json({ user: publicUser(user), token: makeToken(user.id) });
 });
 
@@ -74,6 +101,48 @@ router.post("/login", async (req, res) => {
 
 // POST /api/auth/logout -- client just deletes the token, nothing to do server-side
 router.post("/logout", (req, res) => res.json({ ok: true }));
+
+// POST /api/auth/verify-email  { email, code }
+router.post("/verify-email", async (req, res) => {
+  try {
+    const { email, code } = req.body;
+    if (!email || !code) return res.status(400).json({ error: "Email and code are required." });
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user || !user.verifyToken || !user.verifyTokenExpiry) {
+      return res.status(400).json({ error: "Invalid or expired code." });
+    }
+    if (user.verifyToken !== String(code)) {
+      return res.status(400).json({ error: "Invalid or expired code." });
+    }
+    if (new Date(user.verifyTokenExpiry) < new Date()) {
+      return res.status(400).json({ error: "This code has expired. Request a new one." });
+    }
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { emailVerified: true, verifyToken: null, verifyTokenExpiry: null },
+    });
+    return res.json({ ok: true, verified: true });
+  } catch (err) {
+    console.error("verify-email error:", err.message);
+    return res.status(500).json({ error: "Something went wrong." });
+  }
+});
+
+// POST /api/auth/resend-verification  { email }
+router.post("/resend-verification", async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "Email is required." });
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (user && !user.emailVerified) {
+      await sendVerificationCode(user);
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("resend-verification error:", err.message);
+    return res.status(500).json({ error: "Something went wrong." });
+  }
+});
 
 // POST /api/auth/forgot-password  { email }
 router.post("/forgot-password", async (req, res) => {
