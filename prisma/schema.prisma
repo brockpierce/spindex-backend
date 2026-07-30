@@ -21,6 +21,9 @@ model User {
   profileDrawing String?
   resetToken   String?
   resetTokenExpiry DateTime?
+  emailVerified Boolean @default(false)
+  verifyToken  String?
+  verifyTokenExpiry DateTime?
   age          String?
   town         String?
   country      String?
