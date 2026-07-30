@@ -19,7 +19,8 @@
     "express": "^4.19.2",
     "express-rate-limit": "^8.6.0",
     "express-session": "^1.18.0",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "resend": "^6.18.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.4",

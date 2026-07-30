@@ -19,6 +19,8 @@ model User {
   accentColor  String?
   pageBackground String?
   profileDrawing String?
+  resetToken   String?
+  resetTokenExpiry DateTime?
   age          String?
   town         String?
   country      String?
