@@ -3,6 +3,7 @@ const prisma = require("../lib/prisma");
 const { requireAuth } = require("../middleware/auth");
 const { getCoverArtUrl } = require("../lib/coverart");
 const { makeCoverHandler } = require("../lib/covercache");
+const { searchAndCache } = require("../lib/mbsearch");
 
 // Rewrite an album's coverArtUrl to point at our disk-cache route (absolute URL)
 // when the album has a musicbrainzId. Leaves manual covers / "none" / null alone.
@@ -186,6 +187,23 @@ router.get("/", async (req, res) => {
         a.title.toLowerCase().includes(sl) || a.artistName.toLowerCase().includes(sl)
       );
     } catch (e) { raw._manualMatches = []; }
+
+    // Live MusicBrainz fallback: if local search is thin, fetch + cache new
+    // albums so the catalog self-heals. Fails soft -- never blocks local search.
+    try {
+      const localCount = (raw ? raw.length : 0) + ((raw && raw._manualMatches ? raw._manualMatches.length : 0));
+      if (localCount < 3) {
+        const fetched = await searchAndCache(search);
+        if (fetched && fetched.length) {
+          // Append newly-cached albums to the raw results for scoring/return.
+          const manual = raw._manualMatches || [];
+          raw = raw.concat(fetched);
+          raw._manualMatches = manual;
+        }
+      }
+    } catch (mbErr) {
+      console.warn("MB fallback error (ignored):", mbErr.message);
+    }
   } else {
     raw = await prisma.album.findMany({
       take: limit,
