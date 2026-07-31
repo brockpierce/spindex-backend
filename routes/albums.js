@@ -4,6 +4,18 @@ const { requireAuth } = require("../middleware/auth");
 const { getCoverArtUrl } = require("../lib/coverart");
 const { makeCoverHandler } = require("../lib/covercache");
 
+// Rewrite an album's coverArtUrl to point at our disk-cache route (absolute URL)
+// when the album has a musicbrainzId. Leaves manual covers / "none" / null alone.
+// The cache route 302-redirects to the origin for not-yet-cached covers, so this
+// never breaks rendering -- uncached covers still load, just via a redirect.
+const COVER_BASE = process.env.PUBLIC_BACKEND_URL || "https://spindex-backend.onrender.com";
+function withCachedCover(album) {
+  if (album && album.musicbrainzId && album.coverArtUrl && album.coverArtUrl !== "none") {
+    return { ...album, coverArtUrl: `${COVER_BASE}/api/albums/covers/${album.musicbrainzId}` };
+  }
+  return album;
+}
+
 const router = express.Router();
 
 // Same admin check as tags.js — kept inline here so this file has no
@@ -323,13 +335,13 @@ router.get("/:id", async (req, res) => {
         where: { id: album.id },
         data: { coverArtUrl: result.url || "none" },
       });
-      return res.json({ album: updated });
+      return res.json({ album: withCachedCover(updated) });
     }
     // Transient failure: return album as-is (null coverArtUrl), retry later.
     return res.json({ album });
   }
 
-  res.json({ album });
+  res.json({ album: withCachedCover(album) });
 });
 
 // POST /api/albums/admin-add
