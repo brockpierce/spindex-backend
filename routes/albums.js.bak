@@ -150,16 +150,8 @@ router.get("/", async (req, res) => {
 
   if (search) {
     try {
-      // Sanitise for FTS5. Anything that isn't a letter, number or space is
-      // QUERY SYNTAX to fts5 -- "Mr. Brightside" and "Hello, Goodbye" both
-      // threw `fts5: syntax error near ","`. Tokens are quoted so they're
-      // matched literally and never read as AND/OR/NOT/NEAR operators. Only
-      // the last token gets a prefix * so partial typing still matches.
-      const ftsTokens = search.replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean);
-      const ftsQuery = ftsTokens
-        .map((t, i) => (i === ftsTokens.length - 1 ? `"${t}"*` : `"${t}"`))
-        .join(" ");
-      const ftsResults = ftsTokens.length ? await prisma.$queryRawUnsafe(`
+      const ftsQuery = search.replace(/['"*^]/g, " ").trim() + "*";
+      const ftsResults = await prisma.$queryRawUnsafe(`
         SELECT a.id, a.title, a.artistName, a.releaseYear, a.releaseType,
                a.coverArtUrl, a.musicbrainzId, a.mbRatingCount,
                (SELECT GROUP_CONCAT(al.alias, '|||') FROM ArtistAlias al WHERE al.artistName = a.artistName) as _aliases
@@ -168,7 +160,7 @@ router.get("/", async (req, res) => {
         WHERE album_fts MATCH ?
         ORDER BY a.mbRatingCount DESC
         LIMIT ?
-      `, ftsQuery, limit * 3) : [];
+      `, ftsQuery, limit * 3);
       raw = ftsResults;
     } catch (ftsErr) {
       console.error("FTS search failed, falling back:", ftsErr.message);
