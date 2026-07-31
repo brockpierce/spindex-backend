@@ -123,6 +123,11 @@ async function downloadToCache(id, remoteUrl) {
     }
     if (!resp.ok) {
       console.warn("cover cache: download failed", id, resp.status);
+      // Undici holds the socket until the body is consumed or cancelled.
+      // Returning without touching it leaks the connection — and with this
+      // many 404s that exhausts the pool and the fd limit, which takes ALL
+      // outbound requests down with it.
+      try { if (resp.body && !resp.bodyUsed) await resp.body.cancel(); } catch (_) {}
       return false;
     }
     const buf = Buffer.from(await resp.arrayBuffer());
