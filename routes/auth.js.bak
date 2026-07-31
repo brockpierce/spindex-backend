@@ -52,47 +52,14 @@ async function sendVerificationCode(user) {
   }
 }
 
-const MIN_AGE = 16;
-// Flip to true once the signup form actually sends a birthday. Until then a
-// missing birthday is allowed, so older clients keep working.
-const REQUIRE_BIRTHDAY = false;
-
-// Whole years old TODAY from a "YYYY-MM-DD" string. Returns null if the
-// string is malformed or not a real calendar date. Computed from the date
-// rather than stored, so it can never go stale.
-function ageFromBirthday(b) {
-  const m = String(b || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!m) return null;
-  const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
-  const dt = new Date(Date.UTC(y, mo - 1, d));
-  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;
-  const now = new Date();
-  let age = now.getUTCFullYear() - y;
-  const monthNow = now.getUTCMonth() + 1;
-  if (monthNow < mo || (monthNow === mo && now.getUTCDate() < d)) age -= 1;
-  return age;
-}
-
 // POST /api/auth/signup
 router.post("/signup", async (req, res) => {
-  const { email, password, username, displayName, birthday } = req.body;
+  const { email, password, username, displayName } = req.body;
   if (!email || !password || !username || !displayName) {
     return res.status(400).json({ error: "Email, password, username, and display name are all required." });
   }
   if (password.length < 8) {
     return res.status(400).json({ error: "Password needs to be at least 8 characters." });
-  }
-  if (!birthday && REQUIRE_BIRTHDAY) {
-    return res.status(400).json({ error: "Date of birth is required." });
-  }
-  if (birthday) {
-    const age = ageFromBirthday(birthday);
-    if (age === null || age > 120) {
-      return res.status(400).json({ error: "Please enter a valid date of birth." });
-    }
-    if (age < MIN_AGE) {
-      return res.status(400).json({ error: "You must be at least 16 to use noteblock." });
-    }
   }
   const existingEmail = await prisma.user.findUnique({ where: { email } });
   if (existingEmail) return res.status(409).json({ error: "An account with that email already exists." });
@@ -101,7 +68,7 @@ router.post("/signup", async (req, res) => {
   if (existingUsername) return res.status(409).json({ error: "That username is already taken." });
 
   const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-  const user = await prisma.user.create({ data: { email, passwordHash, username: normalizedUsername, displayName, birthday: birthday || null } });
+  const user = await prisma.user.create({ data: { email, passwordHash, username: normalizedUsername, displayName } });
 
   try {
     const founder = await prisma.user.findUnique({ where: { username: FOUNDER_USERNAME } });

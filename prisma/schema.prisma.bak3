@@ -25,7 +25,6 @@ model User {
   verifyToken  String?
   verifyTokenExpiry DateTime?
   age          String?
-  birthday     String?  // "YYYY-MM-DD", null for accounts created before this existed
   town         String?
   country      String?
   mood         String?
