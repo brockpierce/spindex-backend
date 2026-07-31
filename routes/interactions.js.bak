@@ -120,9 +120,8 @@ router.post("/comments/:reviewId", requireAuth, async (req, res, next) => {
     const textPost = !review ? await prisma.textPost.findUnique({ where: { id: reviewId }, select: { id: true, userId: true } }) : null;
     const mixShare = !review && !textPost ? await prisma.mixShare.findUnique({ where: { id: reviewId }, select: { id: true, userId: true } }) : null;
     const songReview = !review && !textPost && !mixShare ? await prisma.songReview.findUnique({ where: { id: reviewId }, select: { id: true, userId: true } }).catch(() => null) : null;
-    const qotdResponse = !review && !textPost && !mixShare && !songReview ? await prisma.qotdResponse.findUnique({ where: { id: reviewId }, select: { id: true, userId: true } }).catch(() => null) : null;
-    if (!review && !textPost && !mixShare && !songReview && !qotdResponse) return res.status(404).json({ error: "Post not found." });
-    const ownerId = review ? review.userId : (textPost ? textPost.userId : (mixShare ? mixShare.userId : (songReview ? songReview.userId : qotdResponse.userId)));
+    if (!review && !textPost && !mixShare && !songReview) return res.status(404).json({ error: "Post not found." });
+    const ownerId = review ? review.userId : (textPost ? textPost.userId : (mixShare ? mixShare.userId : songReview.userId));
 
     if (parentId) {
       const parent = await prisma.reviewComment.findUnique({ where: { id: parentId } });

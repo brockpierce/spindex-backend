@@ -34,6 +34,7 @@ model User {
   reviews              Review[]
   songReviews          SongReview[]
   qotdResponses        QotdResponse[]
+  qotdComments         QotdComment[]
   listenStatus         ListenStatus[]
   lists                List[]
   favorites            Favorite[]
@@ -425,7 +426,26 @@ model QotdResponse {
 
   user     User          @relation(fields: [userId], references: [id])
   album    Album         @relation(fields: [albumId], references: [id])
+  comments QotdComment[]
 
   @@unique([userId, questionText])
   @@index([questionText])
+}
+
+// Mirrors ReviewComment, including self-referencing replies, so the existing
+// ReviewComments / CommentNode components can render these unchanged.
+model QotdComment {
+  id         String   @id @default(cuid())
+  responseId String
+  userId     String
+  text       String
+  parentId   String?
+  createdAt  DateTime @default(now())
+
+  response QotdResponse  @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  user     User          @relation(fields: [userId], references: [id])
+  parent   QotdComment?  @relation("QotdCommentThread", fields: [parentId], references: [id])
+  replies  QotdComment[] @relation("QotdCommentThread")
+
+  @@index([responseId])
 }

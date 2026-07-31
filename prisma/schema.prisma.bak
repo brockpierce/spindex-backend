@@ -33,7 +33,6 @@ model User {
 
   reviews              Review[]
   songReviews          SongReview[]
-  qotdResponses        QotdResponse[]
   listenStatus         ListenStatus[]
   lists                List[]
   favorites            Favorite[]
@@ -88,7 +87,6 @@ model Album {
   favorites    Favorite[]
   albumTags    AlbumTag[]
   mixItems     AlbumMixItem[]
-  qotdResponses QotdResponse[]
 
   @@index([title])
   @@index([artistName])
@@ -412,20 +410,3 @@ model SongReview {
   @@index([createdAt])
 }
 
-
-// Question of the day: one answer per user per question. The question text is
-// stored on the row rather than referenced, so rotating or editing the bank
-// never orphans or rewrites existing answers.
-model QotdResponse {
-  id           String   @id @default(cuid())
-  userId       String
-  albumId      String
-  questionText String
-  createdAt    DateTime @default(now())
-
-  user     User          @relation(fields: [userId], references: [id])
-  album    Album         @relation(fields: [albumId], references: [id])
-
-  @@unique([userId, questionText])
-  @@index([questionText])
-}
