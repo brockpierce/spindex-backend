@@ -42,65 +42,12 @@ const USER_AGENT = "Spindex/0.1.0 ( replace-with-your-contact-email@example.com 
  *                                               "none"; let a later request
  *                                               retry.
  */
-// --- outbound concurrency -------------------------------------------------
-// Nothing used to limit how many of these ran at once. A feed resolving 30
-// uncovered albums opened 30 sockets to coverartarchive.org, starving the
-// pool and taking unrelated outbound requests (MusicBrainz) with it.
-const CAA_MAX_CONCURRENT = 3;
-const CAA_MAX_QUEUE = 15;
-let caaActive = 0;
-const caaWaiting = [];
-
-function caaAcquire() {
-  if (caaActive < CAA_MAX_CONCURRENT) {
-    caaActive += 1;
-    return Promise.resolve();
-  }
-  return new Promise((resolve) => caaWaiting.push(resolve));
-}
-
-function caaRelease() {
-  const next = caaWaiting.shift();
-  if (next) next();
-  else caaActive -= 1;
-}
-
-// --- failure backoff ------------------------------------------------------
-// A transient failure leaves coverArtUrl null, so without this the same id is
-// retried on the very next request — every page load, forever, while the
-// archive is having a bad day.
-const CAA_RETRY_AFTER_MS = 5 * 60 * 1000;
-const caaFailed = new Map();
-
-function caaRecentlyFailed(id) {
-  const until = caaFailed.get(id);
-  if (!until) return false;
-  if (Date.now() > until) { caaFailed.delete(id); return false; }
-  return true;
-}
-
-function caaMarkFailed(id) {
-  caaFailed.set(id, Date.now() + CAA_RETRY_AFTER_MS);
-  if (caaFailed.size > 5000) {
-    const now = Date.now();
-    for (const [k, v] of caaFailed) if (v < now) caaFailed.delete(k);
-    if (caaFailed.size > 5000) caaFailed.clear();
-  }
-}
-
 async function getCoverArtUrl(musicbrainzReleaseGroupId) {
   const url = `https://coverartarchive.org/release-group/${musicbrainzReleaseGroupId}/front-500`;
 
-  // Recently failed, or too many already queued: report a transient failure
-  // without making a request. Callers already handle this — the album keeps a
-  // null coverArtUrl and a later view retries.
-  if (caaRecentlyFailed(musicbrainzReleaseGroupId)) return { confirmed: false };
-  if (caaWaiting.length >= CAA_MAX_QUEUE) return { confirmed: false };
-
-  await caaAcquire();
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000); // 3s max
+    const timeout = setTimeout(() => controller.abort(), 5000); // 5s max
     const response = await fetch(url, {
       method: "HEAD",
       redirect: "follow",
@@ -117,7 +64,6 @@ async function getCoverArtUrl(musicbrainzReleaseGroupId) {
 
     // 429 (rate limit) or 5xx -- transient, don't cache as "none"
     console.warn(`Cover Art Archive returned ${response.status} for ${musicbrainzReleaseGroupId} -- treating as transient`);
-    caaMarkFailed(musicbrainzReleaseGroupId);
     return { confirmed: false };
   } catch (err) {
     // Timeout / abort / network error -- also transient
@@ -126,10 +72,7 @@ async function getCoverArtUrl(musicbrainzReleaseGroupId) {
     } else {
       console.warn(`Cover art fetch failed for ${musicbrainzReleaseGroupId}: ${err.message} -- treating as transient`);
     }
-    caaMarkFailed(musicbrainzReleaseGroupId);
     return { confirmed: false };
-  } finally {
-    caaRelease();
   }
 }
 
