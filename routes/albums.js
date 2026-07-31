@@ -2,6 +2,7 @@ const express = require("express");
 const prisma = require("../lib/prisma");
 const { requireAuth } = require("../middleware/auth");
 const { getCoverArtUrl } = require("../lib/coverart");
+const { makeCoverHandler } = require("../lib/covercache");
 
 const router = express.Router();
 
@@ -241,6 +242,13 @@ router.get("/", async (req, res) => {
 
   res.json({ albums: [...extraManual, ...deduped] });
 });
+
+// GET /api/covers/:mbid  -- serve a disk-cached album cover (falls back to CAA)
+const coverHandler = makeCoverHandler(async (mbid) => {
+  // The Cover Art Archive front-500 URL is deterministic for a release-group id.
+  return `https://coverartarchive.org/release-group/${mbid}/front-500`;
+});
+router.get("/covers/:mbid", coverHandler);
 
 // GET /api/albums/:id/tags -- read-only, public
 // Defined BEFORE /:id so Express matches this more specific route first.
