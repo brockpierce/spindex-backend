@@ -97,6 +97,11 @@ router.post("/signup", async (req, res) => {
   const existingEmail = await prisma.user.findUnique({ where: { email } });
   if (existingEmail) return res.status(409).json({ error: "An account with that email already exists." });
   const normalizedUsername = username.toLowerCase().trim();
+  // Letters, numbers and underscore only. Anything else — @, /, ., spaces,
+  // emoji — breaks profile URLs, which interpolate the username unescaped.
+  if (!/^[a-z0-9_]{2,20}$/.test(normalizedUsername)) {
+    return res.status(400).json({ error: "Usernames can only use letters, numbers and underscores, and must be 2-20 characters." });
+  }
   const existingUsername = await prisma.user.findUnique({ where: { username: normalizedUsername } });
   if (existingUsername) return res.status(409).json({ error: "That username is already taken." });
 

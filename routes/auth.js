@@ -106,7 +106,24 @@ router.post("/signup", async (req, res) => {
   if (existingUsername) return res.status(409).json({ error: "That username is already taken." });
 
   const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-  const user = await prisma.user.create({ data: { email, passwordHash, username: normalizedUsername, displayName, birthday: birthday || null } });
+  // The existing-username check above and this insert are not atomic — two
+  // near-simultaneous signups can both pass it. Without this catch the P2002
+  // becomes an unhandled rejection and kills the process.
+  let user;
+  try {
+    user = await prisma.user.create({ data: { email, passwordHash, username: normalizedUsername, displayName, birthday: birthday || null } });
+  } catch (err) {
+    if (err && err.code === "P2002") {
+      const field = (err.meta && err.meta.target && err.meta.target[0]) || "";
+      return res.status(409).json({
+        error: field === "email"
+          ? "An account with that email already exists."
+          : "That username is already taken.",
+      });
+    }
+    console.error("signup create failed:", err.message);
+    return res.status(500).json({ error: "Could not create the account. Please try again." });
+  }
 
   try {
     const founder = await prisma.user.findUnique({ where: { username: FOUNDER_USERNAME } });
