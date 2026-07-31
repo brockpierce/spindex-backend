@@ -85,7 +85,7 @@ router.post("/signup", async (req, res) => {
 
   try { await sendVerificationCode(user); } catch (e) { console.error("send verify on signup failed:", e.message); }
 
-  res.status(201).json({ user: publicUser(user), token: makeToken(user.id) });
+  res.status(201).json({ user: publicUser(user), token: makeToken(user.id), needsVerification: true });
 });
 
 // POST /api/auth/login
@@ -96,6 +96,10 @@ router.post("/login", async (req, res) => {
   if (!user) return res.status(401).json({ error: "Incorrect email or password." });
   const passwordMatches = await bcrypt.compare(password, user.passwordHash);
   if (!passwordMatches) return res.status(401).json({ error: "Incorrect email or password." });
+  if (!user.emailVerified) {
+    try { await sendVerificationCode(user); } catch (e) { console.error("resend on login failed:", e.message); }
+    return res.status(403).json({ needsVerification: true, email: user.email });
+  }
   res.json({ user: publicUser(user), token: makeToken(user.id) });
 });
 
