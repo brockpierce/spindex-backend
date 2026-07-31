@@ -43,15 +43,24 @@ const authLimiter = rateLimit({
   max: 20,                  // 20 auth attempts per IP per window
   standardHeaders: true,
   legacyHeaders: false,
+  // Only throttle POSTs. Login, signup, forgot- and reset-password are the
+  // brute-force targets. GET /api/auth/me is the session check that runs on
+  // EVERY page load — limiting it to 20 per 15 minutes was logging users out
+  // after ~20 page loads. It stays covered by apiLimiter below.
+  skip: (req) => req.method === "GET",
   message: { error: "Too many attempts. Please try again in a few minutes." },
 });
 
 // General API limiter (abuse safety net)
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 500,                 // 500 requests per IP per window
+  // 500 was roughly a dozen page loads back when each one fired 40+ requests.
+  // Album fetching is batched now, but 500 is still far too tight for an
+  // active session. This remains an abuse ceiling, not a usage cap.
+  max: 3000,
   standardHeaders: true,
   legacyHeaders: false,
+  message: { error: "Too many requests. Please slow down and try again shortly." },
 });
 app.use("/api/", apiLimiter);
 
