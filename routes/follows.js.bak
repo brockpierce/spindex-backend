@@ -4,10 +4,7 @@ const { requireAuth } = require("../middleware/auth");
 const router = express.Router();
 
 function publicUser(user) {
-  // avatarUrl deliberately omitted: these are LIST responses, and the stored
-  // avatars are multi-megabyte base64. Serialising them for every follower
-  // blocks the event loop. The client falls back to initials.
-  return { id: user.id, username: user.username, displayName: user.displayName, avatarUrl: null };
+  return { id: user.id, username: user.username, displayName: user.displayName, avatarUrl: user.avatarUrl };
 }
 
 router.post("/:userId", requireAuth, async (req, res, next) => {
