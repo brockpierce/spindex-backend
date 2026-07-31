@@ -5,23 +5,17 @@ const { JWT_SECRET, requireAuth } = require("../middleware/auth");
 
 const router = express.Router();
 
-// opts.light omits the three unbounded base64 fields — avatarUrl,
-// pageBackground and profileDrawing. Across the user table those total
-// ~105 MB, and serialising them for a list blocks the event loop long
-// enough to take the whole server unresponsive. Lists pass light: true;
-// single-user routes do not, so profiles are unchanged.
-function publicUser(user, followedIds = new Set(), opts = {}) {
-  const light = opts.light === true;
+function publicUser(user, followedIds = new Set()) {
   return {
     id: user.id,
     username: user.username,
     displayName: user.displayName,
     bio: user.bio,
-    avatarUrl: light ? null : user.avatarUrl,
+    avatarUrl: user.avatarUrl,
     profileTheme: user.profileTheme || null,
     accentColor: user.accentColor || null,
-    pageBackground: light ? null : (user.pageBackground || null),
-    profileDrawing: light ? null : (user.profileDrawing || null),
+    pageBackground: user.pageBackground || null,
+    profileDrawing: user.profileDrawing || null,
     age: user.age || null,
     town: user.town || null,
     country: user.country || null,
@@ -53,7 +47,7 @@ router.get("/", async (req, res, next) => {
       include: { _count: { select: { followers: true, following: true } } },
     });
     const followedIds = await getFollowedIds(req);
-    res.json({ users: users.map((u) => publicUser(u, followedIds, { light: true })) });
+    res.json({ users: users.map((u) => publicUser(u, followedIds)) });
   } catch (e) { next(e); }
 });
 
