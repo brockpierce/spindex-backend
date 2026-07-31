@@ -245,7 +245,18 @@ router.get("/", async (req, res) => {
 
 // GET /api/covers/:mbid  -- serve a disk-cached album cover (falls back to CAA)
 const coverHandler = makeCoverHandler(async (mbid) => {
-  // The Cover Art Archive front-500 URL is deterministic for a release-group id.
+  // Use the album's already-resolved coverArtUrl (proven to work), looking it
+  // up by musicbrainzId. Fall back to the deterministic release-group URL if
+  // the row somehow has no stored url yet.
+  try {
+    const album = await prisma.album.findFirst({
+      where: { musicbrainzId: mbid },
+      select: { coverArtUrl: true },
+    });
+    if (album && album.coverArtUrl && album.coverArtUrl !== "none") {
+      return album.coverArtUrl.replace("http://", "https://");
+    }
+  } catch (e) { /* fall through */ }
   return `https://coverartarchive.org/release-group/${mbid}/front-500`;
 });
 router.get("/covers/:mbid", coverHandler);
