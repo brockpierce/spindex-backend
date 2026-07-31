@@ -45,23 +45,4 @@ router.delete("/:id", requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// GET /api/posts/:id — single text post.
-// Needed so notifications about comments/mentions on a text post can open it:
-// openThread() falls back to /api/reviews/:id, which never matches a text post.
-router.get("/:id", requireAuth, async (req, res, next) => {
-  try {
-    const post = await prisma.textPost.findUnique({
-      where: { id: req.params.id },
-      include: { user: { select: { username: true } } },
-    });
-    if (!post) return res.status(404).json({ error: "Post not found." });
-    res.json({ post: {
-      id: post.id,
-      username: post.user ? post.user.username : null,
-      text: post.text,
-      date: post.createdAt,
-    } });
-  } catch (e) { next(e); }
-});
-
 module.exports = router;
