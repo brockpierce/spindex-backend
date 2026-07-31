@@ -136,7 +136,7 @@ router.get("/trending", async (req, res, next) => {
     });
     // Preserve the curated order
     const ordered = CURATED_TRENDING_IDS.map((id) => albums.find((a) => a.id === id)).filter(Boolean);
-    res.json({ albums: ordered });
+    res.json({ albums: ordered.map(withCachedCover) });
   } catch (e) { next(e); }
 });
 
@@ -193,7 +193,7 @@ router.get("/", async (req, res) => {
     });
   }
 
-  if (!search) return res.json({ albums: raw });
+  if (!search) return res.json({ albums: raw.map(withCachedCover) });
 
   const s = search.toLowerCase();
   const scored = raw
@@ -252,7 +252,7 @@ router.get("/", async (req, res) => {
   const dedupdIds = new Set(deduped.map((r) => r.id));
   const extraManual = manualMatches.filter((r) => !dedupdIds.has(r.id));
 
-  res.json({ albums: [...extraManual, ...deduped] });
+  res.json({ albums: [...extraManual, ...deduped].map(withCachedCover) });
 });
 
 // GET /api/covers/:mbid  -- serve a disk-cached album cover (falls back to CAA)
