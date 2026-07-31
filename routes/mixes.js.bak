@@ -97,21 +97,13 @@ router.get("/:id", async (req, res, next) => {
       include: { items: { orderBy: { position: "asc" } }, user: { select: { username: true } } },
     });
     if (!m) return res.status(404).json({ error: "Mix not found." });
-    // Attach album records so clients can render cover art without having
-    // browsed these albums first. One extra query, not one per album.
-    const mixAlbumIds = m.items.map((item) => item.albumId).filter(Boolean);
-    const mixAlbums = mixAlbumIds.length
-      ? await prisma.album.findMany({ where: { id: { in: mixAlbumIds } } })
-      : [];
-    const mixAlbumById = {};
-    for (const a of mixAlbums) mixAlbumById[a.id] = a;
     res.json({ mix: {
       id: m.id,
       title: m.title,
       description: m.description || "",
       isPublic: m.isPublic !== false,
       owner: m.user ? m.user.username : null,
-      albums: m.items.map((item) => ({ albumId: item.albumId, note: item.note || "", album: mixAlbumById[item.albumId] || null })),
+      albums: m.items.map((item) => ({ albumId: item.albumId, note: item.note || "" })),
     } });
   } catch (e) { next(e); }
 });
