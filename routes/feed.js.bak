@@ -75,7 +75,9 @@ router.get("/public", requireAuth, async (req, res, next) => {
 
     const [reviews, textPosts, mixShares] = await Promise.all([
       prisma.review.findMany({
-        where: { reviewText: { not: null } },
+        // Written reviews only. `not: null` alone let empty strings through,
+        // so a bare rating saved as "" still showed up in the everyone feed.
+        where: { AND: [{ reviewText: { not: null } }, { reviewText: { not: "" } }] },
         include: { user: true },
         orderBy: { createdAt: "desc" },
         take: limit,

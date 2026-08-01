@@ -71,36 +71,50 @@ router.get("/", requireAuth, async (req, res, next) => {
 // GET /api/feed/public — everyone feed (reviews + text posts from anyone)
 router.get("/public", requireAuth, async (req, res, next) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit || "50", 10), 100);
+    const limit = Math.min(parseInt(req.query.limit || "25", 10), 100);
+    // Cursor: only items strictly older than this. Ignored if unparseable, so
+    // a malformed value returns the first page rather than erroring.
+    const beforeRaw = req.query.before;
+    const before = beforeRaw && !isNaN(new Date(beforeRaw)) ? new Date(beforeRaw) : null;
+    const olderThan = before ? { createdAt: { lt: before } } : {};
 
     const [reviews, textPosts, mixShares] = await Promise.all([
       prisma.review.findMany({
         // Written reviews only. `not: null` alone let empty strings through,
         // so a bare rating saved as "" still showed up in the everyone feed.
-        where: { AND: [{ reviewText: { not: null } }, { reviewText: { not: "" } }] },
+        where: { AND: [{ reviewText: { not: null } }, { reviewText: { not: "" } }, olderThan] },
         include: { user: true },
         orderBy: { createdAt: "desc" },
         take: limit,
       }),
       prisma.textPost.findMany({
+        where: olderThan,
         include: { user: true },
         orderBy: { createdAt: "desc" },
         take: limit,
       }),
       prisma.mixShare.findMany({
+        where: olderThan,
         include: { user: true },
         orderBy: { createdAt: "desc" },
-        take: 20,
+        take: limit,
       }),
     ]);
 
-    const feed = [
+    const merged = [
       ...reviews.map(cardFromReview),
       ...textPosts.map(cardFromTextPost),
       ...mixShares.map(cardFromMixShare),
-    ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, limit);
+    ].sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    res.json({ feed });
+    const feed = merged.slice(0, limit);
+    // A short page means we've reached the end — null tells the client to
+    // stop offering "load more".
+    const nextCursor = merged.length > limit && feed.length
+      ? feed[feed.length - 1].date
+      : null;
+
+    res.json({ feed, nextCursor });
   } catch (e) { next(e); }
 });
 
