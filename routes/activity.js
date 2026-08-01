@@ -70,7 +70,7 @@ router.get("/:username", requireAuth, async (req, res, next) => {
     });
     if (!user) return res.status(404).json({ error: "User not found." });
 
-    const filter = ["posts", "likes", "comments"].includes(req.query.filter)
+    const filter = ["reviews", "posts", "likes", "comments"].includes(req.query.filter)
       ? req.query.filter
       : "all";
 
@@ -78,11 +78,21 @@ router.get("/:username", requireAuth, async (req, res, next) => {
     const before = beforeRaw && !isNaN(new Date(beforeRaw)) ? new Date(beforeRaw) : null;
     const olderThan = before ? { createdAt: { lt: before } } : {};
 
+    const wantReviews = filter === "all" || filter === "reviews";
     const wantLikes = filter === "all" || filter === "likes";
     const wantComments = filter === "all" || filter === "comments";
     const wantPosts = filter === "all" || filter === "posts";
 
-    const [likes, comments, posts, likeCount, commentCount, postCount] = await Promise.all([
+    const [reviews, likes, comments, posts, reviewCount, likeCount, commentCount, postCount] = await Promise.all([
+      wantReviews
+        ? prisma.review.findMany({
+            where: { userId: user.id, ...olderThan },
+            orderBy: { createdAt: "desc" },
+            take: PAGE + 1,
+            // Stored album fields only — no Cover Art Archive lookup here.
+            include: { album: { select: { title: true, artistName: true, coverArtUrl: true } } },
+          })
+        : [],
       wantLikes
         ? prisma.reviewReaction.findMany({
             where: { userId: user.id, kind: "heart", ...olderThan },
@@ -104,6 +114,7 @@ router.get("/:username", requireAuth, async (req, res, next) => {
             take: PAGE + 1,
           })
         : [],
+      prisma.review.count({ where: { userId: user.id } }),
       prisma.reviewReaction.count({ where: { userId: user.id, kind: "heart" } }),
       prisma.reviewComment.count({ where: { userId: user.id } }),
       prisma.textPost.count({ where: { userId: user.id } }),
@@ -116,6 +127,21 @@ router.get("/:username", requireAuth, async (req, res, next) => {
     const targets = await resolveTargets(targetIds);
 
     const rows = [];
+
+    for (const rv of reviews) {
+      rows.push({
+        type: "review",
+        id: rv.id,
+        date: rv.createdAt,
+        rating: rv.rating,
+        text: rv.reviewText || "",
+        albumId: rv.albumId,
+        albumTitle: rv.album ? rv.album.title : null,
+        albumArtist: rv.album ? rv.album.artistName : null,
+        // Whatever is already stored. No lookup is triggered here.
+        coverArtUrl: rv.album && rv.album.coverArtUrl !== "none" ? rv.album.coverArtUrl : null,
+      });
+    }
 
     for (const l of likes) {
       const t = targets[l.reviewId];
@@ -161,7 +187,7 @@ router.get("/:username", requireAuth, async (req, res, next) => {
       username: user.username,
       items: page,
       nextCursor,
-      counts: { posts: postCount, likes: likeCount, comments: commentCount },
+      counts: { reviews: reviewCount, posts: postCount, likes: likeCount, comments: commentCount },
     });
   } catch (e) { next(e); }
 });
