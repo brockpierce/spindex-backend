@@ -347,6 +347,23 @@ router.put("/:id/tags", requireAuth, requireAdmin, async (req, res, next) => {
 
 // GET /api/albums/:id
 // Resolves cover art lazily on first view -- see lib/coverart.js for why.
+// GET /api/albums/batch?ids=a,b,c
+// One request for many albums. Replaces the frontend's per-album loop, which
+// was firing ~30 requests per feed load. MUST stay above the "/:id" route
+// below, or Express will match "batch" as an album id.
+router.get("/batch", async (req, res, next) => {
+  try {
+    const ids = String(req.query.ids || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, 100);
+    if (!ids.length) return res.json({ albums: [] });
+    const albums = await prisma.album.findMany({ where: { id: { in: ids } } });
+    res.json({ albums });
+  } catch (e) { next(e); }
+});
+
 router.get("/:id", async (req, res) => {
   const album = await prisma.album.findUnique({ where: { id: req.params.id } });
   if (!album) return res.status(404).json({ error: "Album not found." });

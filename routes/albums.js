@@ -369,17 +369,41 @@ router.get("/:id", async (req, res) => {
   if (!album) return res.status(404).json({ error: "Album not found." });
 
   if (!album.coverArtUrl && album.musicbrainzId) {
-    const result = await getCoverArtUrl(album.musicbrainzId);
-    // Only cache a definitive answer -- if CAA timed out or errored,
-    // leave coverArtUrl as null so a future view retries.
-    if (result.confirmed) {
-      const updated = await prisma.album.update({
-        where: { id: album.id },
-        data: { coverArtUrl: result.url || "none" },
-      });
-      return res.json({ album: withCachedCover(updated) });
+    // Give the archive a short window to answer. If it does, the viewer gets
+    // the cover straight away. If it doesn't, respond WITHOUT it and let the
+    // lookup finish in the background — blocking here for seconds is what was
+    // stalling the event loop and failing Render's 5s health check.
+    const lookup = getCoverArtUrl(album.musicbrainzId);
+
+    // Only a definitive answer is stored. A transient failure leaves
+    // coverArtUrl null so a later view retries. Nothing is ever deleted.
+    const persist = async (result) => {
+      if (!result || !result.confirmed) return null;
+      try {
+        return await prisma.album.update({
+          where: { id: album.id },
+          data: { coverArtUrl: result.url || "none" },
+        });
+      } catch (e) {
+        console.warn("cover persist failed for", album.id, e.message);
+        return null;
+      }
+    };
+
+    const TIMEBOX_MS = 800;
+    const raced = await Promise.race([
+      lookup.then((r) => ({ done: true, result: r })).catch(() => ({ done: true, result: null })),
+      new Promise((resolve) => setTimeout(() => resolve({ done: false }), TIMEBOX_MS)),
+    ]);
+
+    if (raced.done) {
+      const updated = await persist(raced.result);
+      return res.json({ album: updated ? withCachedCover(updated) : album });
     }
-    // Transient failure: return album as-is (null coverArtUrl), retry later.
+
+    // Too slow — respond now, finish in the background. The next viewer of
+    // this album gets the cover.
+    lookup.then(persist).catch(() => {});
     return res.json({ album });
   }
 
