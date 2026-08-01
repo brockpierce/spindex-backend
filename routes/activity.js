@@ -179,7 +179,16 @@ router.get("/:username", requireAuth, async (req, res, next) => {
 
     rows.sort((a, b) => new Date(b.date) - new Date(a.date));
     const page = rows.slice(0, PAGE);
-    const nextCursor = rows.length > PAGE && page.length
+    // "Has more" is based on the raw fetched arrays (each capped at PAGE+1),
+    // not on `rows`: rows whose target was deleted get dropped above, which
+    // can pull the merged length below PAGE and kill pagination early.
+    const hasMore =
+      reviews.length > PAGE ||
+      likes.length > PAGE ||
+      comments.length > PAGE ||
+      posts.length > PAGE ||
+      rows.length > PAGE;
+    const nextCursor = hasMore && page.length
       ? page[page.length - 1].date
       : null;
 
