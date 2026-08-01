@@ -84,6 +84,7 @@ app.use("/api/mix-shares", require("./routes/mixShares"));
 app.use("/api/messages", require("./routes/messages"));
 app.use("/api/news", require("./routes/news"));
 app.use("/api/qotd", require("./routes/qotd"));
+app.use("/api/activity", require("./routes/activity"));
 app.use("/api/messages", require("./routes/messages"));
 app.use("/api/news", require("./routes/news"));
 
