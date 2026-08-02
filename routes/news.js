@@ -4,8 +4,15 @@ const { requireAuth } = require("../middleware/auth");
 const router = express.Router();
 
 const ADMIN_USERNAME = "brock";
+const ADMIN_USER_ID = process.env.ADMIN_USER_ID || null;
 
 async function requireAdmin(req, res, next) {
+  // Prefer the immutable ADMIN_USER_ID; fall back to the username only while it
+  // is unset. Set ADMIN_USER_ID in Render's Environment tab.
+  if (ADMIN_USER_ID) {
+    if (req.userId !== ADMIN_USER_ID) return res.status(403).json({ error: "Admin only." });
+    return next();
+  }
   const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { username: true } });
   if (!user || user.username !== ADMIN_USERNAME) return res.status(403).json({ error: "Admin only." });
   next();

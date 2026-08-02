@@ -1,6 +1,14 @@
 const jwt = require("jsonwebtoken");
 
-const JWT_SECRET = process.env.JWT_SECRET || "dev-jwt-secret-change-in-production";
+// In production (Render sets RENDER=true) JWT_SECRET MUST be set explicitly —
+// refuse to start rather than silently sign sessions with a public default that
+// would let anyone forge a token for any user. Locally we keep a dev-only
+// fallback so `npm run dev` works without setup.
+const IS_PROD = process.env.NODE_ENV === "production" || !!process.env.RENDER;
+const JWT_SECRET = process.env.JWT_SECRET || (IS_PROD ? null : "dev-jwt-secret-change-in-production");
+if (!JWT_SECRET) {
+  throw new Error("JWT_SECRET must be set in production — refusing to start with a default secret.");
+}
 
 function requireAuth(req, res, next) {
   const header = req.headers.authorization;

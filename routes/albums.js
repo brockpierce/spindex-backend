@@ -23,8 +23,18 @@ const router = express.Router();
 // new dependencies. If you promote another user to admin later, edit
 // both files or move this to a shared middleware.
 const ADMIN_USERNAME = "brock";
+const ADMIN_USER_ID = process.env.ADMIN_USER_ID || null;
 async function requireAdmin(req, res, next) {
   try {
+    // Prefer an immutable user id. Usernames can be changed, so gating admin on
+    // a username string is fragile. Falls back to the username check only while
+    // ADMIN_USER_ID is unset (set it in Render's Environment tab).
+    if (ADMIN_USER_ID) {
+      if (req.userId !== ADMIN_USER_ID) {
+        return res.status(403).json({ error: "Admin only." });
+      }
+      return next();
+    }
     const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { username: true } });
     if (!user || user.username !== ADMIN_USERNAME) {
       return res.status(403).json({ error: "Admin only." });

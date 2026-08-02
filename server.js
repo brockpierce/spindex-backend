@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 
 const authRoutes = require("./routes/auth");
@@ -24,6 +25,14 @@ const ALLOWED_ORIGINS = [
   "https://mynoteblock.com",
   "http://localhost:5173",
 ].filter(Boolean);
+
+// Security headers. This API serves JSON and cover images (no HTML), so CSP is
+// left off; crossOriginResourcePolicy is set to cross-origin so the Vercel
+// frontend can load cover images served from this backend.
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+}));
 
 app.use(cors({
   origin: (origin, callback) => {

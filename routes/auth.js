@@ -302,9 +302,18 @@ router.put("/profile", requireAuth, async (req, res) => {
 
   // Handle username change with uniqueness check
   if (username !== undefined) {
-    const normalized = username.toLowerCase().trim().slice(0, 30);
-    if (normalized.length < 1) {
-      return res.status(400).json({ error: "Username can't be empty." });
+    const normalized = username.toLowerCase().trim();
+    // Same rule as signup: letters/numbers/underscore, 2-20 chars. The change
+    // route previously allowed arbitrary characters up to 30, which let a user
+    // set an unsafe username (breaks URL interpolation) or a homoglyph
+    // impersonation of another account.
+    if (!/^[a-z0-9_]{2,20}$/.test(normalized)) {
+      return res.status(400).json({ error: "Usernames can only use letters, numbers and underscores, and must be 2-20 characters." });
+    }
+    // Reserved names can't be claimed via a rename.
+    const RESERVED = new Set(["admin", "administrator", "root", "support", "staff", "noteblock", "mod", "moderator", "system"]);
+    if (RESERVED.has(normalized)) {
+      return res.status(409).json({ error: "That username is reserved." });
     }
     // Check if someone else already has this username
     const existing = await prisma.user.findUnique({ where: { username: normalized } });
