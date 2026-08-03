@@ -33,20 +33,6 @@ router.get("/community-average", async (req, res, next) => {
   } catch (e) { res.json({ average: null, count: 0 }); }
 });
 
-// GET /api/reviews/album-average/:albumId — average rating for one album.
-// Declared before the "/:albumId" routes below so "album-average" isn't
-// matched as an album id.
-router.get("/album-average/:albumId", async (req, res) => {
-  try {
-    const result = await prisma.review.aggregate({
-      where: { albumId: req.params.albumId },
-      _avg: { rating: true },
-      _count: { rating: true },
-    });
-    res.json({ average: result._avg.rating, count: result._count.rating });
-  } catch (e) { res.json({ average: null, count: 0 }); }
-});
-
 router.put("/:albumId", requireAuth, async (req, res, next) => {
   try {
     const { albumId } = req.params;
