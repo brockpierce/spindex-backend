@@ -109,7 +109,10 @@ function ageFromBirthday(b) {
 
 // POST /api/auth/signup
 router.post("/signup", async (req, res) => {
-  const { email, password, username, displayName, birthday } = req.body;
+  const { email, password, username, birthday } = req.body;
+  // Collapse whitespace/newlines and cap length so no one can set a giant or
+  // layout-breaking display name at signup (the update route already caps it).
+  const displayName = String(req.body.displayName || "").replace(/\s+/g, " ").trim().slice(0, 60);
   if (!email || !password || !username || !displayName) {
     return res.status(400).json({ error: "Email, password, username, and display name are all required." });
   }
