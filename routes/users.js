@@ -5,11 +5,12 @@ const { JWT_SECRET, requireAuth } = require("../middleware/auth");
 
 const router = express.Router();
 
-// opts.light omits the three unbounded base64 fields — avatarUrl,
-// pageBackground and profileDrawing. Across the user table those total
-// ~105 MB, and serialising them for a list blocks the event loop long
-// enough to take the whole server unresponsive. Lists pass light: true;
-// single-user routes do not, so profiles are unchanged.
+// opts.light omits the still-unbounded base64 fields — pageBackground and
+// profileDrawing — from list responses, because serialising them for a list
+// blocks the event loop long enough to take the whole server unresponsive.
+// avatarUrl is NO LONGER gated: avatars are compressed on upload, capped at
+// 200 KB server-side, and existing rows were migrated down, so they're safe in
+// lists again. Lists still pass light: true to keep the two big blobs out.
 function publicUser(user, followedIds = new Set(), opts = {}) {
   const light = opts.light === true;
   return {
@@ -17,7 +18,7 @@ function publicUser(user, followedIds = new Set(), opts = {}) {
     username: user.username,
     displayName: user.displayName,
     bio: user.bio,
-    avatarUrl: light ? null : user.avatarUrl,
+    avatarUrl: user.avatarUrl,
     profileTheme: user.profileTheme || null,
     accentColor: user.accentColor || null,
     pageBackground: light ? null : (user.pageBackground || null),

@@ -4,10 +4,10 @@ const { requireAuth } = require("../middleware/auth");
 const router = express.Router();
 
 function publicUser(user) {
-  // avatarUrl deliberately omitted: these are LIST responses, and the stored
-  // avatars are multi-megabyte base64. Serialising them for every follower
-  // blocks the event loop. The client falls back to initials.
-  return { id: user.id, username: user.username, displayName: user.displayName, avatarUrl: null };
+  // avatarUrl is safe in lists again: avatars are now compressed on upload,
+  // capped at 200 KB server-side, and existing rows were migrated down. (The
+  // uncapped pageBackground/profileDrawing blobs are still never selected here.)
+  return { id: user.id, username: user.username, displayName: user.displayName, avatarUrl: user.avatarUrl || null };
 }
 
 router.post("/:userId", requireAuth, async (req, res, next) => {
