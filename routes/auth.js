@@ -6,6 +6,7 @@ const { ipKeyGenerator } = rateLimit;
 const prisma = require("../lib/prisma");
 const { requireAuth, JWT_SECRET } = require("../middleware/auth");
 const { validateImageDataUrl } = require("../lib/imageValidation");
+const { deleteUserCompletely } = require("../lib/deleteUser");
 const { Resend } = require("resend");
 
 // Key code limiters on the target email; fall back to an IPv6-safe IP key when
@@ -373,6 +374,20 @@ router.put("/profile", requireAuth, async (req, res) => {
 
   const user = await prisma.user.update({ where: { id: req.userId }, data });
   res.json({ user: publicUser(user) });
+});
+
+// DELETE /api/auth/account — permanently delete the logged-in user and ALL of
+// their data. Irreversible. Required by App Store guideline 5.1.1(v): an app
+// that lets you create an account must let you delete it in-app.
+router.delete("/account", requireAuth, async (req, res) => {
+  try {
+    await deleteUserCompletely(req.userId);
+    return res.json({ ok: true });
+  } catch (err) {
+    if (err.code === "USER_NOT_FOUND") return res.status(404).json({ error: "Account not found." });
+    console.error("account deletion failed:", err.message);
+    return res.status(500).json({ error: "Could not delete the account. Please try again." });
+  }
 });
 
 module.exports = router;
