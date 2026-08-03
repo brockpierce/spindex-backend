@@ -84,6 +84,9 @@ async function main() {
   const albums = await prisma.album.findMany({
     where: { musicbrainzId: { not: null }, discogsMasterId: null },
     select: { id: true, title: true, artistName: true, musicbrainzId: true },
+    // Most-popular first: higher Discogs-link hit rate and the albums people
+    // actually browse. Each run advances through the next-most-popular batch.
+    orderBy: { mbRatingCount: "desc" },
     take: LIMIT,
   });
   console.log(`Processing ${albums.length} album(s). DRY=${DRY} discogs-auth=${discogsAuth() ? "set" : "MISSING"}`);
