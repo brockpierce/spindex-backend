@@ -107,6 +107,11 @@ app.get("/api/health", (req, res) => res.json({ ok: true }));
 // instead of crashing the process
 app.use((err, req, res, next) => {
   console.error("Route error:", err.message);
+  // Body-parser rejects an over-limit request with a 413 — surface that clearly
+  // instead of masking it as a generic 500.
+  if (err.type === "entity.too.large" || err.status === 413 || err.statusCode === 413) {
+    return res.status(413).json({ error: "That upload is too large. Please use a smaller image." });
+  }
   res.status(500).json({ error: "Something went wrong on our end." });
 });
 
