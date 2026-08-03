@@ -1,8 +1,9 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
 const jwt = require("jsonwebtoken");
-const { JWT_SECRET, requireAuth } = require("../middleware/auth");
+const { JWT_SECRET, requireAuth, optionalAuth } = require("../middleware/auth");
 const { validateImageDataUrl } = require("../lib/imageValidation");
+const { isBlockedBetween } = require("../lib/blocks");
 
 const router = express.Router();
 
@@ -120,7 +121,7 @@ router.put("/profile", requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-router.get("/:username", async (req, res, next) => {
+router.get("/:username", optionalAuth, async (req, res, next) => {
   try {
     const user = await prisma.user.findUnique({
       where: { username: req.params.username },
@@ -128,7 +129,10 @@ router.get("/:username", async (req, res, next) => {
     });
     if (!user) return res.status(404).json({ error: "User not found." });
     const followedIds = await getFollowedIds(req);
-    res.json({ user: publicUser(user, followedIds) });
+    // Profile stays reachable (so a blocked user can be found to unblock), but
+    // the flag lets the client hide their content and offer unblock instead.
+    const blocked = req.userId ? await isBlockedBetween(req.userId, user.id) : false;
+    res.json({ user: { ...publicUser(user, followedIds), blocked } });
   } catch (e) { next(e); }
 });
 

@@ -447,3 +447,30 @@ model QotdResponse {
   @@unique([userId, questionText])
   @@index([questionText])
 }
+
+// A (blockerId) blocks B (blockedId): neither can message the other, and each
+// is hidden from the other's feed/comments/profile content. Stored without a
+// User FK (like GuestbookEntry) so blocking has no schema coupling; cleanup on
+// account deletion is handled in lib/deleteUser.js.
+model Block {
+  id        String   @id @default(cuid())
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
+}
+
+// User-submitted report of objectionable content or a user, for admin review.
+model Report {
+  id         String   @id @default(cuid())
+  reporterId String
+  targetType String   // "post" | "comment" | "review" | "user"
+  targetId   String
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}

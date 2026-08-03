@@ -107,6 +107,8 @@ app.use("/api/messages", require("./routes/messages"));
 app.use("/api/news", require("./routes/news"));
 app.use("/api/qotd", require("./routes/qotd"));
 app.use("/api/activity", require("./routes/activity"));
+app.use("/api/blocks", require("./routes/blocks"));
+app.use("/api/reports", require("./routes/reports"));
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 

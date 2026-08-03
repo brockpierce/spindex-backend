@@ -2,6 +2,7 @@ const express = require("express");
 const prisma = require("../lib/prisma");
 const { requireAuth } = require("../middleware/auth");
 const { perUserLimiter } = require("../lib/rateLimit");
+const { getBlockedIds, isBlockedBetween } = require("../lib/blocks");
 const router = express.Router();
 
 const sendLimiter = perUserLimiter({ windowMs: 60 * 1000, max: 30, message: "You're sending messages too fast." });
@@ -45,8 +46,13 @@ router.get("/conversations", requireAuth, async (req, res, next) => {
       };
     });
 
-    const unreadCount = conversations.filter((c) => c.unread).length;
-    res.json({ conversations, unreadCount });
+    // Hide conversations with users blocked in either direction.
+    const blockedIds = await getBlockedIds(req.userId);
+    const visible = blockedIds.length
+      ? conversations.filter((c) => !c.otherUser || !blockedIds.includes(c.otherUser.id))
+      : conversations;
+    const unreadCount = visible.filter((c) => c.unread).length;
+    res.json({ conversations: visible, unreadCount });
   } catch (e) { next(e); }
 });
 
@@ -59,6 +65,9 @@ router.post("/conversations", requireAuth, async (req, res, next) => {
     const otherUser = await prisma.user.findFirst({ where: { username }, select: { id: true, username: true, displayName: true, avatarUrl: true } });
     if (!otherUser) return res.status(404).json({ error: "User not found." });
     if (otherUser.id === req.userId) return res.status(400).json({ error: "Cannot message yourself." });
+    if (await isBlockedBetween(req.userId, otherUser.id)) {
+      return res.status(403).json({ error: "You can't message this user." });
+    }
 
     // Check if conversation already exists
     const existing = await prisma.conversation.findFirst({
@@ -128,6 +137,11 @@ router.post("/conversations/:id", requireAuth, sendLimiter, async (req, res, nex
       where: { conversationId_userId: { conversationId: req.params.id, userId: req.userId } }
     });
     if (!participant) return res.status(403).json({ error: "Not in this conversation." });
+
+    const others = await prisma.conversationParticipant.findMany({ where: { conversationId: req.params.id, userId: { not: req.userId } }, select: { userId: true } });
+    if (others.length && await isBlockedBetween(req.userId, others[0].userId)) {
+      return res.status(403).json({ error: "You can't message this user." });
+    }
 
     const message = await prisma.directMessage.create({
       data: { conversationId: req.params.id, senderId: req.userId, text: text.trim() },

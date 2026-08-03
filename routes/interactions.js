@@ -1,8 +1,9 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
 const { notifyMentions } = require("../lib/notifyMentions");
-const { requireAuth } = require("../middleware/auth");
+const { requireAuth, optionalAuth } = require("../middleware/auth");
 const { perUserLimiter } = require("../lib/rateLimit");
+const { getBlockedIds } = require("../lib/blocks");
 
 const reactLimiter = perUserLimiter({ windowMs: 60 * 1000, max: 120, message: "You're reacting too fast." });
 const commentLimiter = perUserLimiter({ windowMs: 60 * 1000, max: 30, message: "You're commenting too fast." });
@@ -100,14 +101,17 @@ function buildCommentTree(comments) {
   return roots;
 }
 
-router.get("/comments/:reviewId", async (req, res, next) => {
+router.get("/comments/:reviewId", optionalAuth, async (req, res, next) => {
   try {
     const comments = await prisma.reviewComment.findMany({
       where: { reviewId: req.params.reviewId },
       include: { user: { select: { username: true } } },
       orderBy: { createdAt: "asc" },
     });
-    res.json({ comments: buildCommentTree(comments) });
+    // Hide comments from users blocked in either direction.
+    const blockedIds = await getBlockedIds(req.userId);
+    const visible = blockedIds.length ? comments.filter((c) => !blockedIds.includes(c.userId)) : comments;
+    res.json({ comments: buildCommentTree(visible) });
   } catch (e) { next(e); }
 });
 

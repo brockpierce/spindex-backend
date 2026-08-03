@@ -1,6 +1,7 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
 const { requireAuth } = require("../middleware/auth");
+const { getBlockedIds } = require("../lib/blocks");
 const router = express.Router();
 
 function cardFromReview(review) {
@@ -47,8 +48,14 @@ function cardFromMixShare(share) {
 router.get("/", requireAuth, async (req, res, next) => {
   try {
     const userId = req.userId;
-    const follows = await prisma.follow.findMany({ where: { followerId: userId } });
-    const followedIds = follows.map((f) => f.followedId);
+    const [follows, blockedIds] = await Promise.all([
+      prisma.follow.findMany({ where: { followerId: userId } }),
+      getBlockedIds(userId),
+    ]);
+    // Blocking severs follows, but filter defensively so a blocked user can
+    // never surface in the feed even from stale state.
+    const blockedSet = new Set(blockedIds);
+    const followedIds = follows.map((f) => f.followedId).filter((id) => !blockedSet.has(id));
 
     const [reviews, textPosts, mixShares] = await Promise.all([
       followedIds.length
@@ -81,24 +88,27 @@ router.get("/public", requireAuth, async (req, res, next) => {
     const beforeRaw = req.query.before;
     const before = beforeRaw && !isNaN(new Date(beforeRaw)) ? new Date(beforeRaw) : null;
     const olderThan = before ? { createdAt: { lt: before } } : {};
+    // Hide content from blocked users (both directions) from the everyone feed.
+    const blockedIds = await getBlockedIds(req.userId);
+    const notBlocked = blockedIds.length ? { userId: { notIn: blockedIds } } : {};
 
     const [reviews, textPosts, mixShares] = await Promise.all([
       prisma.review.findMany({
         // Written reviews only. `not: null` alone let empty strings through,
         // so a bare rating saved as "" still showed up in the everyone feed.
-        where: { AND: [{ reviewText: { not: null } }, { reviewText: { not: "" } }, olderThan] },
+        where: { AND: [{ reviewText: { not: null } }, { reviewText: { not: "" } }, olderThan, notBlocked] },
         include: { user: true },
         orderBy: { createdAt: "desc" },
         take: limit,
       }),
       prisma.textPost.findMany({
-        where: olderThan,
+        where: { AND: [olderThan, notBlocked] },
         include: { user: true, images: { select: { position: true, width: true, height: true }, orderBy: { position: "asc" } } },
         orderBy: { createdAt: "desc" },
         take: limit,
       }),
       prisma.mixShare.findMany({
-        where: olderThan,
+        where: { AND: [olderThan, notBlocked] },
         include: { user: true },
         orderBy: { createdAt: "desc" },
         take: limit,
