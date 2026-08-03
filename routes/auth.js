@@ -1,10 +1,40 @@
 const express = require("express");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const rateLimit = require("express-rate-limit");
+const { ipKeyGenerator } = rateLimit;
 const prisma = require("../lib/prisma");
 const { requireAuth, JWT_SECRET } = require("../middleware/auth");
 const { validateImageDataUrl } = require("../lib/imageValidation");
 const { Resend } = require("resend");
+
+// Key code limiters on the target email; fall back to an IPv6-safe IP key when
+// no email is present (ipKeyGenerator normalises IPv6 so it can't be bypassed
+// by rotating within a /64).
+const emailKey = (req) => (req.body && req.body.email ? String(req.body.email).toLowerCase() : ipKeyGenerator(req.ip));
+
+// Per-EMAIL limit on code guesses. The global auth limiter is per-IP, so an
+// attacker rotating IPs could otherwise brute-force a 6-digit code within its
+// lifetime. Keying on the target email caps guesses regardless of source IP.
+const codeGuessLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: emailKey,
+  message: { error: "Too many attempts. Request a new code and try again in a few minutes." },
+});
+
+// Per-EMAIL limit on code SENDS — stops using us to spam-bomb someone's inbox
+// with reset/verification emails.
+const codeSendLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: emailKey,
+  message: { error: "Too many requests for that email. Please wait a few minutes." },
+});
 
 const AVATAR_MAX_BYTES = 200 * 1024; // 200 KB — the client compresses to tens of KB
 
@@ -165,7 +195,7 @@ router.post("/login", async (req, res) => {
 router.post("/logout", (req, res) => res.json({ ok: true }));
 
 // POST /api/auth/verify-email  { email, code }
-router.post("/verify-email", async (req, res) => {
+router.post("/verify-email", codeGuessLimiter, async (req, res) => {
   try {
     const { email, code } = req.body;
     if (!email || !code) return res.status(400).json({ error: "Email and code are required." });
@@ -191,7 +221,7 @@ router.post("/verify-email", async (req, res) => {
 });
 
 // POST /api/auth/resend-verification  { email }
-router.post("/resend-verification", async (req, res) => {
+router.post("/resend-verification", codeSendLimiter, async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: "Email is required." });
@@ -207,7 +237,7 @@ router.post("/resend-verification", async (req, res) => {
 });
 
 // POST /api/auth/forgot-password  { email }
-router.post("/forgot-password", async (req, res) => {
+router.post("/forgot-password", codeSendLimiter, async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: "Email is required." });
@@ -247,7 +277,7 @@ router.post("/forgot-password", async (req, res) => {
 });
 
 // POST /api/auth/reset-password  { email, code, newPassword }
-router.post("/reset-password", async (req, res) => {
+router.post("/reset-password", codeGuessLimiter, async (req, res) => {
   try {
     const { email, code, newPassword } = req.body;
     if (!email || !code || !newPassword) {

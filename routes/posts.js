@@ -1,5 +1,6 @@
 const express = require("express");
 const rateLimit = require("express-rate-limit");
+const { ipKeyGenerator } = rateLimit;
 const prisma = require("../lib/prisma");
 const { notifyMentions } = require("../lib/notifyMentions");
 const { requireAuth } = require("../middleware/auth");
@@ -19,7 +20,7 @@ const postCreateLimiter = rateLimit({
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.userId || req.ip,
+  keyGenerator: (req) => req.userId || ipKeyGenerator(req.ip),
   message: { error: "You're posting too fast. Please wait a bit and try again." },
 });
 

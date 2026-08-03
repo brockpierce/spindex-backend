@@ -1,6 +1,6 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
-const { requireAuth } = require("../middleware/auth");
+const { requireAuth, optionalAuth } = require("../middleware/auth");
 const router = express.Router();
 
 // GET /api/mixes — list current user's album mixes
@@ -90,13 +90,18 @@ router.get("/saved", requireAuth, async (req, res, next) => {
 });
 
 // GET /api/mixes/:id — single mix by ID (public-facing; used by editorial + feed shares)
-router.get("/:id", async (req, res, next) => {
+router.get("/:id", optionalAuth, async (req, res, next) => {
   try {
     const m = await prisma.albumMix.findUnique({
       where: { id: req.params.id },
       include: { items: { orderBy: { position: "asc" } }, user: { select: { username: true } } },
     });
     if (!m) return res.status(404).json({ error: "Mix not found." });
+    // A private mix is visible only to its owner. 404 (not 403) so the route
+    // doesn't confirm the id exists to anyone else.
+    if (m.isPublic === false && m.userId !== req.userId) {
+      return res.status(404).json({ error: "Mix not found." });
+    }
     // Attach album records so clients can render cover art without having
     // browsed these albums first. One extra query, not one per album.
     const mixAlbumIds = m.items.map((item) => item.albumId).filter(Boolean);
@@ -163,6 +168,12 @@ router.post("/:id/albums", requireAuth, async (req, res, next) => {
 // DELETE /api/mixes/:id/albums/:albumId — remove an album from a mix
 router.delete("/:id/albums/:albumId", requireAuth, async (req, res, next) => {
   try {
+    // Ownership check — without it, any logged-in user could strip albums out
+    // of another user's mix (the mixId + albumId both come from the URL).
+    const mix = await prisma.albumMix.findUnique({ where: { id: req.params.id } });
+    if (!mix || mix.userId !== req.userId) {
+      return res.status(404).json({ error: "Mix not found." });
+    }
     await prisma.albumMixItem.deleteMany({
       where: { mixId: req.params.id, albumId: req.params.albumId },
     });

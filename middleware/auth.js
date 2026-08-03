@@ -25,4 +25,16 @@ function requireAuth(req, res, next) {
   }
 }
 
-module.exports = { requireAuth, JWT_SECRET };
+// Like requireAuth but never rejects: sets req.userId when a valid token is
+// present, leaves it undefined otherwise. For routes that are public but need
+// to know the caller — e.g. to let an owner view their own private resource
+// while hiding it from everyone else.
+function optionalAuth(req, res, next) {
+  const header = req.headers.authorization;
+  if (header && header.startsWith("Bearer ")) {
+    try { req.userId = jwt.verify(header.slice(7), JWT_SECRET).userId; } catch (_) {}
+  }
+  next();
+}
+
+module.exports = { requireAuth, optionalAuth, JWT_SECRET };

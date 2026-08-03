@@ -1,6 +1,6 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
-const { requireAuth } = require("../middleware/auth");
+const { requireAuth, optionalAuth } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -75,12 +75,17 @@ router.post("/", requireAuth, async (req, res) => {
 });
 
 // GET /api/lists/:id
-router.get("/:id", async (req, res) => {
+router.get("/:id", optionalAuth, async (req, res) => {
   const list = await prisma.list.findUnique({
     where: { id: req.params.id },
     include: { items: { orderBy: { position: "asc" } }, user: true },
   });
   if (!list) return res.status(404).json({ error: "List not found." });
+  // A private list is visible only to its owner. 404 (not 403) so the route
+  // doesn't confirm the id exists to anyone else.
+  if (list.isPublic === false && list.userId !== req.userId) {
+    return res.status(404).json({ error: "List not found." });
+  }
   res.json({ list: publicList(list) });
 });
 

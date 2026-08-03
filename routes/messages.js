@@ -119,6 +119,7 @@ router.post("/conversations/:id", requireAuth, async (req, res, next) => {
   try {
     const { text } = req.body;
     if (!text?.trim()) return res.status(400).json({ error: "Message text required." });
+    if (text.length > 5000) return res.status(400).json({ error: "That message is too long." });
 
     const participant = await prisma.conversationParticipant.findUnique({
       where: { conversationId_userId: { conversationId: req.params.id, userId: req.userId } }
