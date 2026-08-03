@@ -41,7 +41,11 @@ app.use(cors({
   },
   credentials: true,
 }));
-app.use(express.json({ limit: "10mb" }));
+// 1mb is safe now that every image upload is compressed client-side (avatars
+// <=200KB, covers ~a few hundred KB) and capped server-side. It also acts as the
+// backstop for any client that tries to bypass those caps. Raise per-route if a
+// future feature (e.g. multi-image posts) legitimately needs more.
+app.use(express.json({ limit: "1mb" }));
 
 // Trust Render's proxy so rate limiting sees real client IPs
 app.set("trust proxy", 1);
