@@ -2,6 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
+const compression = require("compression");
 const rateLimit = require("express-rate-limit");
 
 const authRoutes = require("./routes/auth");
@@ -33,6 +34,10 @@ app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginResourcePolicy: { policy: "cross-origin" },
 }));
+
+// Gzip responses — the feed and album payloads are large JSON, so this cuts
+// response bandwidth ~60-80%. Cheapest high-traffic win there is.
+app.use(compression());
 
 app.use(cors({
   origin: (origin, callback) => {
@@ -102,8 +107,6 @@ app.use("/api/messages", require("./routes/messages"));
 app.use("/api/news", require("./routes/news"));
 app.use("/api/qotd", require("./routes/qotd"));
 app.use("/api/activity", require("./routes/activity"));
-app.use("/api/messages", require("./routes/messages"));
-app.use("/api/news", require("./routes/news"));
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 

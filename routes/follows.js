@@ -1,6 +1,9 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
 const { requireAuth } = require("../middleware/auth");
+const { perUserLimiter } = require("../lib/rateLimit");
+
+const followLimiter = perUserLimiter({ windowMs: 60 * 1000, max: 60, message: "You're following/unfollowing too fast." });
 const router = express.Router();
 
 function publicUser(user) {
@@ -10,7 +13,7 @@ function publicUser(user) {
   return { id: user.id, username: user.username, displayName: user.displayName, avatarUrl: user.avatarUrl || null };
 }
 
-router.post("/:userId", requireAuth, async (req, res, next) => {
+router.post("/:userId", requireAuth, followLimiter, async (req, res, next) => {
   try {
     const { userId } = req.params;
     if (userId === req.userId) return res.status(400).json({ error: "You can't follow yourself." });
@@ -38,7 +41,7 @@ router.post("/:userId", requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-router.delete("/:userId", requireAuth, async (req, res, next) => {
+router.delete("/:userId", requireAuth, followLimiter, async (req, res, next) => {
   try {
     const follow = await prisma.follow.findUnique({
       where: { followerId_followedId: { followerId: req.userId, followedId: req.params.userId } },

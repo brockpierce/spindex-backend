@@ -5,3 +5,4 @@ prisma/dev.db-journal
 .DS_Store
 prisma/dev.db-shm
 prisma/dev.db-wal
+*.bak

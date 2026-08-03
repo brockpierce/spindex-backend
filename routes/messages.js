@@ -1,7 +1,10 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
 const { requireAuth } = require("../middleware/auth");
+const { perUserLimiter } = require("../lib/rateLimit");
 const router = express.Router();
+
+const sendLimiter = perUserLimiter({ windowMs: 60 * 1000, max: 30, message: "You're sending messages too fast." });
 
 // GET /api/messages/conversations — list all conversations for current user
 router.get("/conversations", requireAuth, async (req, res, next) => {
@@ -115,7 +118,7 @@ router.get("/conversations/:id", requireAuth, async (req, res, next) => {
 });
 
 // POST /api/messages/conversations/:id — send a message
-router.post("/conversations/:id", requireAuth, async (req, res, next) => {
+router.post("/conversations/:id", requireAuth, sendLimiter, async (req, res, next) => {
   try {
     const { text } = req.body;
     if (!text?.trim()) return res.status(400).json({ error: "Message text required." });

@@ -2,6 +2,10 @@ const express = require("express");
 const prisma = require("../lib/prisma");
 const { notifyMentions } = require("../lib/notifyMentions");
 const { requireAuth } = require("../middleware/auth");
+const { perUserLimiter } = require("../lib/rateLimit");
+
+const reactLimiter = perUserLimiter({ windowMs: 60 * 1000, max: 120, message: "You're reacting too fast." });
+const commentLimiter = perUserLimiter({ windowMs: 60 * 1000, max: 30, message: "You're commenting too fast." });
 const router = express.Router();
 
 // ============================================================
@@ -20,7 +24,7 @@ router.get("/reactions/:reviewId", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-router.put("/reactions/:reviewId", requireAuth, async (req, res, next) => {
+router.put("/reactions/:reviewId", requireAuth, reactLimiter, async (req, res, next) => {
   try {
     const { reviewId } = req.params;
     const { kind } = req.body;
@@ -107,7 +111,7 @@ router.get("/comments/:reviewId", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-router.post("/comments/:reviewId", requireAuth, async (req, res, next) => {
+router.post("/comments/:reviewId", requireAuth, commentLimiter, async (req, res, next) => {
   try {
     const { reviewId } = req.params;
     const { text, parentId } = req.body;
