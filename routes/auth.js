@@ -3,7 +3,10 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const prisma = require("../lib/prisma");
 const { requireAuth, JWT_SECRET } = require("../middleware/auth");
+const { validateImageDataUrl } = require("../lib/imageValidation");
 const { Resend } = require("resend");
+
+const AVATAR_MAX_BYTES = 200 * 1024; // 200 KB — the client compresses to tens of KB
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 // Switch RESET_FROM to "noteblock <noreply@mynoteblock.com>" once the domain is verified in Resend.
@@ -298,7 +301,22 @@ router.put("/profile", requireAuth, async (req, res) => {
   const data = {};
   if (displayName !== undefined) data.displayName = displayName.trim().slice(0, 60);
   if (bio !== undefined) data.bio = bio.trim().slice(0, 30);
-  if (avatarUrl !== undefined) data.avatarUrl = avatarUrl;
+  if (avatarUrl !== undefined) {
+    if (avatarUrl === null || avatarUrl === "") {
+      data.avatarUrl = null;
+    } else {
+      // Only validate a *new* avatar. An unchanged value — e.g. an older cached
+      // client re-sending the account's existing pre-compression avatar on an
+      // unrelated save — is left alone, so the size limit can't break existing
+      // accounts before the migration runs.
+      const current = await prisma.user.findUnique({ where: { id: req.userId }, select: { avatarUrl: true } });
+      if (!current || current.avatarUrl !== avatarUrl) {
+        const err = validateImageDataUrl(avatarUrl, AVATAR_MAX_BYTES);
+        if (err) return res.status(400).json({ error: err });
+      }
+      data.avatarUrl = avatarUrl;
+    }
+  }
 
   // Handle username change with uniqueness check
   if (username !== undefined) {
