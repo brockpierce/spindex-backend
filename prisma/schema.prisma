@@ -77,6 +77,10 @@ model Album {
   releaseType     String?  @default("Album")
   coverArtUrl     String?
   musicbrainzId   String?  @unique
+  // Discogs master id, when this album has been matched/enriched from Discogs.
+  // Unique so an album is never created twice from the same Discogs master;
+  // an album can carry a MB id, a Discogs id, or both — always one row.
+  discogsMasterId String?  @unique
   mbRatingCount   Int?     @default(0)
   createdByUserId String?
   createdAt       DateTime @default(now())
