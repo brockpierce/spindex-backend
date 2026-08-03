@@ -2,6 +2,7 @@ const express = require("express");
 const prisma = require("../lib/prisma");
 const { requireAuth } = require("../middleware/auth");
 const { getCoverArtUrl } = require("../lib/coverart");
+const { enrichInBackground } = require("../lib/discogs");
 const { makeCoverHandler } = require("../lib/covercache");
 const { maybeFetch } = require("../lib/mbsearch");
 
@@ -377,6 +378,11 @@ router.get("/batch", async (req, res, next) => {
 router.get("/:id", async (req, res) => {
   const album = await prisma.album.findUnique({ where: { id: req.params.id } });
   if (!album) return res.status(404).json({ error: "Album not found." });
+
+  // Lazily enrich Discogs tags + a fallback cover on first view. Fire-and-forget,
+  // once-per-album, one at a time server-wide — never blocks the response or
+  // storms outbound requests. No-op unless DISCOGS_TOKEN is set.
+  enrichInBackground(album.id);
 
   if (!album.coverArtUrl && album.musicbrainzId) {
     // Give the archive a short window to answer. If it does, the viewer gets

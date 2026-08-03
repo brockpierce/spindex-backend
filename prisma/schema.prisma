@@ -81,6 +81,10 @@ model Album {
   // Unique so an album is never created twice from the same Discogs master;
   // an album can carry a MB id, a Discogs id, or both — always one row.
   discogsMasterId String?  @unique
+  // When Discogs enrichment last attempted this album (match or not). Lets the
+  // lazy enricher attempt each album at most once — the once-per-album property
+  // that keeps a traffic spike from re-triggering lookups.
+  discogsCheckedAt DateTime?
   mbRatingCount   Int?     @default(0)
   createdByUserId String?
   createdAt       DateTime @default(now())
