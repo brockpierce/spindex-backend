@@ -41,10 +41,14 @@ app.use(cors({
   },
   credentials: true,
 }));
+// Text posts can carry up to 3 compressed images, so that ONE route gets a
+// larger body allowance. Registered before the global 1mb parser — express.json
+// skips a request whose body another parser already read, so /api/posts uses
+// 3mb and every other route stays at 1mb.
+app.use("/api/posts", express.json({ limit: "3mb" }));
 // 1mb is safe now that every image upload is compressed client-side (avatars
 // <=200KB, covers ~a few hundred KB) and capped server-side. It also acts as the
-// backstop for any client that tries to bypass those caps. Raise per-route if a
-// future feature (e.g. multi-image posts) legitimately needs more.
+// backstop for any client that tries to bypass those caps.
 app.use(express.json({ limit: "1mb" }));
 
 // Trust Render's proxy so rate limiting sees real client IPs

@@ -24,6 +24,10 @@ function cardFromTextPost(post) {
     username: post.user.username,
     text: post.text,
     date: post.createdAt,
+    // Metadata only — image bytes are never carried in the feed. The client
+    // reserves layout space from these and fetches the actual images on open.
+    imageCount: post.images ? post.images.length : 0,
+    images: post.images || [],
   };
 }
 
@@ -51,7 +55,7 @@ router.get("/", requireAuth, async (req, res, next) => {
         ? prisma.review.findMany({ where: { userId: { in: followedIds } }, include: { user: true }, orderBy: { createdAt: "desc" }, take: 50 })
         : [],
       followedIds.length
-        ? prisma.textPost.findMany({ where: { userId: { in: followedIds } }, include: { user: true }, orderBy: { createdAt: "desc" }, take: 50 })
+        ? prisma.textPost.findMany({ where: { userId: { in: followedIds } }, include: { user: true, images: { select: { position: true, width: true, height: true }, orderBy: { position: "asc" } } }, orderBy: { createdAt: "desc" }, take: 50 })
         : [],
       followedIds.length
         ? prisma.mixShare.findMany({ where: { userId: { in: followedIds } }, include: { user: true }, orderBy: { createdAt: "desc" }, take: 20 })
@@ -89,7 +93,7 @@ router.get("/public", requireAuth, async (req, res, next) => {
       }),
       prisma.textPost.findMany({
         where: olderThan,
-        include: { user: true },
+        include: { user: true, images: { select: { position: true, width: true, height: true }, orderBy: { position: "asc" } } },
         orderBy: { createdAt: "desc" },
         take: limit,
       }),

@@ -202,10 +202,27 @@ model TextPost {
   text      String
   createdAt DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  user   User            @relation(fields: [userId], references: [id])
+  images TextPostImage[]
 
   @@index([userId])
   @@index([createdAt])
+}
+
+// 0-3 images per text post. Separate table (not columns on TextPost) so image
+// bytes are only loaded when explicitly selected — feeds must never carry them.
+model TextPostImage {
+  id         String   @id @default(cuid())
+  textPostId String
+  position   Int
+  data       String   // base64 image data URL
+  width      Int?
+  height     Int?
+  createdAt  DateTime @default(now())
+
+  post TextPost @relation(fields: [textPostId], references: [id], onDelete: Cascade)
+
+  @@index([textPostId])
 }
 
 // Sharing an album mix to the feed
