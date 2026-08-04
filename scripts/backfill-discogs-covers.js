@@ -36,17 +36,19 @@ async function main() {
   });
   console.log(`Processing ${albums.length} album(s). DRY=${DRY} discogs-auth=${discogsAuth() ? "set" : "MISSING"}`);
 
-  let moved = 0, noArt = 0;
+  let moved = 0, noArt = 0, i = 0;
   for (const a of albums) {
+    i++;
     try {
       const img = await fetchMasterCover(a.discogsMasterId);
       await sleep(1100); // Discogs rate limit
-      if (!img) { noArt++; if (DRY) console.log(`  ${a.artistName} — ${a.title}  ::  (no art on Discogs)`); continue; }
-      if (DRY) { console.log(`  ${a.artistName} — ${a.title}  ::  -> Discogs cover`); continue; }
-      await prisma.album.update({ where: { id: a.id }, data: { coverArtUrl: img } });
+      const status = img ? "-> Discogs cover" : "(no art on Discogs)";
+      console.log(`  [${i}/${albums.length}] ${a.artistName} — ${a.title}  ::  ${status}`);
+      if (!img) { noArt++; continue; }
+      if (!DRY) await prisma.album.update({ where: { id: a.id }, data: { coverArtUrl: img } });
       moved++;
     } catch (e) {
-      console.error(`  ${a.id} failed: ${e.message}`);
+      console.error(`  [${i}/${albums.length}] ${a.id} failed: ${e.message}`);
     }
   }
   console.log(`Done. Moved ${moved} cover(s) to Discogs; ${noArt} had no Discogs art.`);
