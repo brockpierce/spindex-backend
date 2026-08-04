@@ -20,15 +20,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {
   const albums = await prisma.album.findMany({
+    // FALLBACK ONLY — albums with NO MusicBrainz cover (coverArtUrl "none" means
+    // Cover Art Archive confirmed there's none), or a broken Discogs placeholder,
+    // or a tagged album that was never resolved. NEVER archive.org / MB covers:
+    // those are canonical and stay put.
     where: {
-      albumTags: { some: {} }, // tagged → shows on a tag page; worth a cover
-      // FALLBACK ONLY — albums with NO cover (or a broken Discogs placeholder).
-      // Never archive.org / MusicBrainz covers: those are canonical, keep them.
       OR: [
-        { coverArtUrl: null },
         { coverArtUrl: "none" },
-        { coverArtUrl: { contains: "st.discogs.com" } },     // broken Discogs placeholder
+        { coverArtUrl: { contains: "st.discogs.com" } },
         { coverArtUrl: { contains: "spacer" } },
+        { AND: [{ albumTags: { some: {} } }, { coverArtUrl: null }] },
       ],
     },
     select: { id: true, title: true, artistName: true, releaseYear: true, musicbrainzId: true, discogsMasterId: true },
