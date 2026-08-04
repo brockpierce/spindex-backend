@@ -10,7 +10,9 @@
  *   node scripts/restore-mb-covers.js
  */
 require("dotenv").config();
+const fs = require("fs");
 const prisma = require("../lib/prisma");
+const { cachePathFor } = require("../lib/covercache");
 
 const LIMIT = parseInt(process.env.LIMIT || "1000", 10);
 const DRY = process.env.DRY === "1";
@@ -44,7 +46,11 @@ async function main() {
     await sleep(400);
     if (has === true) {
       console.log(`  [${i}/${albums.length}] ${a.artistName} — ${a.title}  ::  restore MB cover`);
-      if (!DRY) await prisma.album.update({ where: { id: a.id }, data: { coverArtUrl: null } });
+      if (!DRY) {
+        await prisma.album.update({ where: { id: a.id }, data: { coverArtUrl: null } });
+        // Drop the cached Discogs image so the cover endpoint re-downloads CAA.
+        try { fs.unlinkSync(cachePathFor(a.musicbrainzId)); } catch (_) {}
+      }
       restored++;
     } else if (has === false) {
       keptDiscogs++; // no MB art — Discogs fallback stays
