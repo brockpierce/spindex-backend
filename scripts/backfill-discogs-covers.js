@@ -12,7 +12,7 @@
  */
 require("dotenv").config();
 const prisma = require("../lib/prisma");
-const { fetchMasterCover, discogsAuth } = require("../lib/discogs");
+const { fetchMasterCover, resolveDiscogs, discogsAuth } = require("../lib/discogs");
 
 const LIMIT = parseInt(process.env.LIMIT || "100", 10);
 const DRY = process.env.DRY === "1";
@@ -30,28 +30,43 @@ async function main() {
         { coverArtUrl: { contains: "spacer" } },
       ],
     },
-    select: { id: true, title: true, artistName: true, discogsMasterId: true },
+    select: { id: true, title: true, artistName: true, releaseYear: true, musicbrainzId: true, discogsMasterId: true },
     orderBy: { mbRatingCount: "desc" },
     take: LIMIT,
   });
   console.log(`Processing ${albums.length} album(s). DRY=${DRY} discogs-auth=${discogsAuth() ? "set" : "MISSING"}`);
 
-  let moved = 0, noArt = 0, i = 0;
+  let moved = 0, fixed = 0, noArt = 0, i = 0;
   for (const a of albums) {
     i++;
     try {
-      const img = await fetchMasterCover(a.discogsMasterId);
+      let img = await fetchMasterCover(a.discogsMasterId);
       await sleep(1100); // Discogs rate limit
-      const status = img ? "-> Discogs cover" : "(no art on Discogs)";
+      let newMasterId = null;
+      // Stored master returned no art — usually a wrong/fuzzy match. Re-resolve
+      // fresh (MB cross-link first, then a strict artist+title+year search) to
+      // find the correct master and its cover.
+      if (!img) {
+        const r = await resolveDiscogs(a); // paces itself
+        if (r && r.imageUrl) { img = r.imageUrl; newMasterId = r.masterId; }
+      }
+      const status = !img ? "(no art on Discogs)" : (newMasterId ? "-> re-matched + cover" : "-> Discogs cover");
       console.log(`  [${i}/${albums.length}] ${a.artistName} — ${a.title}  ::  ${status}`);
       if (!img) { noArt++; continue; }
-      if (!DRY) await prisma.album.update({ where: { id: a.id }, data: { coverArtUrl: img } });
-      moved++;
+      if (!DRY) {
+        const data = { coverArtUrl: img };
+        if (newMasterId && newMasterId !== a.discogsMasterId) {
+          const clash = await prisma.album.findUnique({ where: { discogsMasterId: newMasterId }, select: { id: true } });
+          if (!clash) data.discogsMasterId = newMasterId;
+        }
+        await prisma.album.update({ where: { id: a.id }, data });
+      }
+      if (newMasterId) fixed++; else moved++;
     } catch (e) {
       console.error(`  [${i}/${albums.length}] ${a.id} failed: ${e.message}`);
     }
   }
-  console.log(`Done. Moved ${moved} cover(s) to Discogs; ${noArt} had no Discogs art.`);
+  console.log(`Done. Moved ${moved}, re-matched ${fixed}, ${noArt} with no art.`);
 }
 
 main().then(() => process.exit(0)).catch((e) => { console.error(e); process.exit(1); });
