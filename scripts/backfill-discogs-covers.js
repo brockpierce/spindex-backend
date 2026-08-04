@@ -22,11 +22,12 @@ async function main() {
   const albums = await prisma.album.findMany({
     where: {
       albumTags: { some: {} }, // tagged → shows on a tag page; worth a cover
+      // FALLBACK ONLY — albums with NO cover (or a broken Discogs placeholder).
+      // Never archive.org / MusicBrainz covers: those are canonical, keep them.
       OR: [
         { coverArtUrl: null },
         { coverArtUrl: "none" },
-        { coverArtUrl: { contains: "archive.org" } },       // flaky Cover Art Archive
-        { coverArtUrl: { contains: "st.discogs.com" } },     // Discogs placeholder
+        { coverArtUrl: { contains: "st.discogs.com" } },     // broken Discogs placeholder
         { coverArtUrl: { contains: "spacer" } },
       ],
     },
