@@ -21,7 +21,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function main() {
   const albums = await prisma.album.findMany({
     where: {
-      discogsMasterId: { not: null },
+      albumTags: { some: {} }, // tagged → shows on a tag page; worth a cover
       OR: [
         { coverArtUrl: null },
         { coverArtUrl: "none" },
