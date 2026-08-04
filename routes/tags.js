@@ -21,6 +21,23 @@ router.get("/popular", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /api/tags/search?q=... — tags matching a query, most-used first. Powers
+// searching by tag from the browse search box.
+router.get("/search", async (req, res, next) => {
+  try {
+    const q = (req.query.q || "").trim().toLowerCase();
+    if (q.length < 2) return res.json({ tags: [] });
+    const groups = await prisma.albumTag.groupBy({
+      by: ["tag"],
+      where: { tag: { contains: q } },
+      _count: { tag: true },
+      orderBy: { _count: { tag: "desc" } },
+      take: 12,
+    });
+    res.json({ tags: groups.map((g) => g.tag) });
+  } catch (e) { next(e); }
+});
+
 // GET /api/tags/:tag/albums
 // Return all albums with this tag (paginated). Used by the tag results page.
 router.get("/:tag/albums", async (req, res, next) => {
