@@ -47,7 +47,10 @@ async function main() {
     if (has === true) {
       console.log(`  [${i}/${albums.length}] ${a.artistName} — ${a.title}  ::  restore MB cover`);
       if (!DRY) {
-        await prisma.album.update({ where: { id: a.id }, data: { coverArtUrl: null } });
+        // Set the CAA URL explicitly (not null) so the Discogs cover backfill,
+        // which targets null/"none"/placeholder covers, won't re-swap it.
+        const caaUrl = `https://coverartarchive.org/release-group/${a.musicbrainzId}/front-500`;
+        await prisma.album.update({ where: { id: a.id }, data: { coverArtUrl: caaUrl } });
         // Drop the cached Discogs image so the cover endpoint re-downloads CAA.
         try { fs.unlinkSync(cachePathFor(a.musicbrainzId)); } catch (_) {}
       }
