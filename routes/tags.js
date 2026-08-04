@@ -1,5 +1,6 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
+const { withCachedCover } = require("../lib/covercache");
 const router = express.Router();
 
 // GET /api/tags/popular?limit=N
@@ -53,8 +54,9 @@ router.get("/:tag/albums", async (req, res, next) => {
       take: limit,
     });
 
-    // Return the album objects with a normalized shape matching /api/albums
-    const albums = rows.map((r) => r.album).filter(Boolean);
+    // Route covers through our disk cache (like /api/albums) so the tag grid
+    // loads them reliably instead of hitting flaky archive.org / hotlinked CDNs.
+    const albums = rows.map((r) => r.album).filter(Boolean).map(withCachedCover);
     res.json({ albums });
   } catch (e) { next(e); }
 });

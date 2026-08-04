@@ -3,21 +3,13 @@ const prisma = require("../lib/prisma");
 const { requireAuth } = require("../middleware/auth");
 const { getCoverArtUrl } = require("../lib/coverart");
 const { enrichInBackground } = require("../lib/discogs");
-const { makeCoverHandler } = require("../lib/covercache");
+const { makeCoverHandler, withCachedCover } = require("../lib/covercache");
 const { maybeFetch } = require("../lib/mbsearch");
 
 // Rewrite an album's coverArtUrl to point at our disk-cache route (absolute URL)
 // when the album has a musicbrainzId. Leaves manual covers / "none" / null alone.
 // The cache route 302-redirects to the origin for not-yet-cached covers, so this
 // never breaks rendering -- uncached covers still load, just via a redirect.
-const COVER_BASE = process.env.PUBLIC_BACKEND_URL || "https://spindex-backend.onrender.com";
-function withCachedCover(album) {
-  if (album && album.musicbrainzId && album.coverArtUrl && album.coverArtUrl !== "none") {
-    return { ...album, coverArtUrl: `${COVER_BASE}/api/albums/covers/${album.musicbrainzId}` };
-  }
-  return album;
-}
-
 const router = express.Router();
 
 // Same admin check as tags.js — kept inline here so this file has no
