@@ -45,11 +45,32 @@ async function main() {
   const albums = await prisma.album.findMany({
     where: {
       musicbrainzId: { not: null },
-      OR: [
-        { coverArtUrl: "none" },
-        { coverArtUrl: { contains: "i.discogs.com" } },
-        { coverArtUrl: { contains: "st.discogs.com" } },
-        { coverArtUrl: { contains: "spacer" } },
+      AND: [
+        {
+          // Only "uncertain" covers. null is included because the swap-undo
+          // (UPDATE ... SET coverArtUrl = NULL) blanked the legit Discogs
+          // fallbacks (e.g. ee - Tinyspot) too, not just the wrong swaps.
+          OR: [
+            { coverArtUrl: null },
+            { coverArtUrl: "none" },
+            { coverArtUrl: { contains: "i.discogs.com" } },
+            { coverArtUrl: { contains: "st.discogs.com" } },
+            { coverArtUrl: { contains: "spacer" } },
+          ],
+        },
+        {
+          // Scope to in-use albums (same set prewarm covers) so this stays
+          // bounded and fixes what people actually see, not 2.6M dead rows.
+          OR: [
+            { reviews: { some: {} } },
+            { albumTags: { some: {} } },
+            { favorites: { some: {} } },
+            { listenStatus: { some: {} } },
+            { mixItems: { some: {} } },
+            { listItems: { some: {} } },
+            { songReviews: { some: {} } },
+          ],
+        },
       ],
     },
     select: { id: true, title: true, artistName: true, releaseYear: true, musicbrainzId: true, coverArtUrl: true },
