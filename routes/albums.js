@@ -135,12 +135,23 @@ const CURATED_TRENDING_IDS = [
 
 router.get("/trending", async (req, res, next) => {
   try {
-    const albums = await prisma.album.findMany({
-      where: { id: { in: CURATED_TRENDING_IDS } },
+    // Admin-curated featured albums, newest featured first. Until an admin has
+    // featured anything, fall back to the curated default list so the browse
+    // showcase is never empty. `featured` tells the client which ids are truly
+    // admin-featured (so the admin toggle reflects real state, not the fallback).
+    const featuredRows = await prisma.featuredAlbum.findMany({
+      orderBy: { createdAt: "desc" },
+      include: { album: true },
     });
-    // Preserve the curated order
-    const ordered = CURATED_TRENDING_IDS.map((id) => albums.find((a) => a.id === id)).filter(Boolean);
-    res.json({ albums: ordered.map(withCachedCover) });
+    const featured = featuredRows.map((f) => f.albumId);
+    let albums;
+    if (featuredRows.length) {
+      albums = featuredRows.map((f) => f.album).filter(Boolean);
+    } else {
+      const rows = await prisma.album.findMany({ where: { id: { in: CURATED_TRENDING_IDS } } });
+      albums = CURATED_TRENDING_IDS.map((id) => rows.find((a) => a.id === id)).filter(Boolean);
+    }
+    res.json({ albums: albums.map(withCachedCover), featured });
   } catch (e) { next(e); }
 });
 
@@ -345,6 +356,30 @@ router.put("/:id/tags", requireAuth, requireAdmin, async (req, res, next) => {
     ]);
 
     res.json({ tags: normalized });
+  } catch (e) { next(e); }
+});
+
+// POST /api/albums/:id/feature -- admin only. Add an album to the browse
+// "trending" showcase. Idempotent (upsert), so re-featuring is harmless.
+router.post("/:id/feature", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const album = await prisma.album.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!album) return res.status(404).json({ error: "Album not found." });
+    await prisma.featuredAlbum.upsert({
+      where: { albumId: album.id },
+      update: {},
+      create: { albumId: album.id },
+    });
+    res.json({ ok: true, featured: true });
+  } catch (e) { next(e); }
+});
+
+// DELETE /api/albums/:id/feature -- admin only. Remove an album from the
+// browse showcase. deleteMany so removing a non-featured album is a no-op.
+router.delete("/:id/feature", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    await prisma.featuredAlbum.deleteMany({ where: { albumId: req.params.id } });
+    res.json({ ok: true, featured: false });
   } catch (e) { next(e); }
 });
 

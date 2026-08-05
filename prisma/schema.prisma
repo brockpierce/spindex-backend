@@ -98,6 +98,7 @@ model Album {
   albumTags    AlbumTag[]
   mixItems     AlbumMixItem[]
   qotdResponses QotdResponse[]
+  featured     FeaturedAlbum?
 
   @@index([title])
   @@index([artistName])
@@ -479,6 +480,17 @@ model Report {
   targetId   String
   reason     String?
   createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// Admin-curated albums shown in the browse "trending" showcase. Only an admin
+// writes here (see routes/albums.js). One row per album; newest featured first.
+model FeaturedAlbum {
+  id        String   @id @default(cuid())
+  albumId   String   @unique
+  album     Album    @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
 
   @@index([createdAt])
 }
