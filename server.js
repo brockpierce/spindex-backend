@@ -25,6 +25,11 @@ const ALLOWED_ORIGINS = [
   "https://www.mynoteblock.com",
   "https://mynoteblock.com",
   "http://localhost:5173",
+  // Capacitor native app. iOS webview requests come from capacitor://localhost;
+  // http/https localhost covers Capacitor live-reload and the Android scheme.
+  "capacitor://localhost",
+  "http://localhost",
+  "https://localhost",
 ].filter(Boolean);
 
 // Security headers. This API serves JSON and cover images (no HTML), so CSP is
