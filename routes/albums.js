@@ -28,6 +28,13 @@ async function requireAdmin(req, res, next) {
       }
       return next();
     }
+    // No ADMIN_USER_ID configured. Refuse in production rather than fall back to
+    // a mutable username — otherwise a cleared env var would hand admin to whoever
+    // holds the username "brock" (and usernames can be changed). The fallback is
+    // only for local/dev where ADMIN_USER_ID is typically unset.
+    if (process.env.NODE_ENV === "production") {
+      return res.status(403).json({ error: "Admin not configured." });
+    }
     const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { username: true } });
     if (!user || user.username !== ADMIN_USERNAME) {
       return res.status(403).json({ error: "Admin only." });
