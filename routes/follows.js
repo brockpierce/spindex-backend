@@ -1,6 +1,6 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
-const { requireAuth } = require("../middleware/auth");
+const { requireAuth, optionalAuth } = require("../middleware/auth");
 const { perUserLimiter } = require("../lib/rateLimit");
 
 const followLimiter = perUserLimiter({ windowMs: 60 * 1000, max: 60, message: "You're following/unfollowing too fast." });
@@ -11,6 +11,19 @@ function publicUser(user) {
   // capped at 200 KB server-side, and existing rows were migrated down. (The
   // uncapped pageBackground/profileDrawing blobs are still never selected here.)
   return { id: user.id, username: user.username, displayName: user.displayName, avatarUrl: user.avatarUrl || null };
+}
+
+// Annotate a list of public users with whether the requesting viewer follows
+// each one (for the in-list follow button) and which row is the viewer's own.
+async function withFollowFlags(users, viewerId) {
+  if (!viewerId) return users.map((u) => ({ ...u, isFollowing: false, isSelf: false }));
+  const ids = users.map((u) => u.id);
+  const rows = await prisma.follow.findMany({
+    where: { followerId: viewerId, followedId: { in: ids } },
+    select: { followedId: true },
+  });
+  const following = new Set(rows.map((r) => r.followedId));
+  return users.map((u) => ({ ...u, isFollowing: following.has(u.id), isSelf: u.id === viewerId }));
 }
 
 router.post("/:userId", requireAuth, followLimiter, async (req, res, next) => {
@@ -52,17 +65,19 @@ router.delete("/:userId", requireAuth, followLimiter, async (req, res, next) => 
   } catch (e) { next(e); }
 });
 
-router.get("/:userId/followers", async (req, res, next) => {
+router.get("/:userId/followers", optionalAuth, async (req, res, next) => {
   try {
     const follows = await prisma.follow.findMany({ where: { followedId: req.params.userId }, include: { follower: true } });
-    res.json({ users: follows.map((f) => publicUser(f.follower)) });
+    const users = await withFollowFlags(follows.map((f) => publicUser(f.follower)), req.userId);
+    res.json({ users });
   } catch (e) { next(e); }
 });
 
-router.get("/:userId/following", async (req, res, next) => {
+router.get("/:userId/following", optionalAuth, async (req, res, next) => {
   try {
     const follows = await prisma.follow.findMany({ where: { followerId: req.params.userId }, include: { followed: true } });
-    res.json({ users: follows.map((f) => publicUser(f.followed)) });
+    const users = await withFollowFlags(follows.map((f) => publicUser(f.followed)), req.userId);
+    res.json({ users });
   } catch (e) { next(e); }
 });
 
