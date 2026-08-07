@@ -41,13 +41,18 @@ router.get("/me", requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// GET /api/listen-status/user/:userId — public count for another user's profile
+// GET /api/listen-status/user/:userId — public listened/queue lists + count for
+// another user's profile. Returns the album-id lists so the profile can render
+// the listened grid and the "queued" section, plus the count for the stat.
 router.get("/user/:userId", async (req, res, next) => {
   try {
-    const listenedCount = await prisma.listenStatus.count({
-      where: { userId: req.params.userId, status: "listened" },
+    const rows = await prisma.listenStatus.findMany({
+      where: { userId: req.params.userId },
+      select: { albumId: true, status: true },
     });
-    res.json({ listenedCount });
+    const listened = rows.filter((r) => r.status === "listened").map((r) => r.albumId);
+    const queue = rows.filter((r) => r.status === "want_to_listen").map((r) => r.albumId);
+    res.json({ listenedCount: listened.length, listened, queue });
   } catch (e) { next(e); }
 });
 
