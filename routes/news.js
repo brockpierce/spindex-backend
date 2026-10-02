@@ -110,10 +110,10 @@ router.delete("/aotd/:id", requireAuth, requireAdmin, async (req, res, next) => 
 // POST /api/news/interviews — create interview (admin)
 router.post("/interviews", requireAuth, requireAdmin, async (req, res, next) => {
   try {
-    const { title, body, albumIds } = req.body;
+    const { title, body, albumIds, artistPhoto } = req.body;
     if (!title || !body) return res.status(400).json({ error: "Title and body required." });
     const item = await prisma.interview.create({
-      data: { title, body, albumIds: (albumIds || []).join(","), authorId: req.userId },
+      data: { title, body, albumIds: (albumIds || []).join(","), artistPhoto: artistPhoto || null, authorId: req.userId },
     });
     res.status(201).json({ item });
   } catch (e) { next(e); }
@@ -122,10 +122,10 @@ router.post("/interviews", requireAuth, requireAdmin, async (req, res, next) => 
 // PUT /api/news/interviews/:id (admin)
 router.put("/interviews/:id", requireAuth, requireAdmin, async (req, res, next) => {
   try {
-    const { title, body, albumIds } = req.body;
+    const { title, body, albumIds, artistPhoto } = req.body;
     const item = await prisma.interview.update({
       where: { id: req.params.id },
-      data: { title, body, albumIds: (albumIds || []).join(",") },
+      data: { title, body, albumIds: (albumIds || []).join(","), artistPhoto: artistPhoto || null },
     });
     res.json({ item });
   } catch (e) { next(e); }
