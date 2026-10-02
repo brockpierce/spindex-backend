@@ -46,15 +46,15 @@ router.get("/:tag/albums", async (req, res, next) => {
     const tag = (req.params.tag || "").trim().toLowerCase();
     if (!tag) return res.json({ albums: [] });
 
-    // High ceiling so the tag page can show every album (the frontend reveals
-    // them progressively with a "show more" button). 1000 is effectively no cap
-    // for real tag sizes while still bounding a pathological query.
-    const limit = Math.min(parseInt(req.query.limit, 10) || 1000, 1000);
+    // No cap: return every album for the tag (frontend reveals them
+    // progressively with a "show more" button). An explicit ?limit=N is still
+    // honored if a caller wants to bound it.
+    const limit = parseInt(req.query.limit, 10);
     const rows = await prisma.albumTag.findMany({
       where: { tag },
       include: { album: true },
       orderBy: { createdAt: "desc" },
-      take: limit,
+      ...(Number.isFinite(limit) && limit > 0 ? { take: limit } : {}),
     });
 
     // Route covers through our disk cache (like /api/albums) so the tag grid
