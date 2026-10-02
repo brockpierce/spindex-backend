@@ -400,6 +400,7 @@ model Interview {
   body        String
   albumIds    String   // comma-separated album IDs
   artistPhoto String?  // compressed base64 data URL (optional thumbnail)
+  subtitle    String?  // short bio / standfirst shown under the title
   publishedAt DateTime @default(now())
   authorId    String
 
