@@ -35,6 +35,7 @@ router.put("/featured-mix", requireAuth, requireAdmin, async (req, res, next) =>
     const { mixId } = req.body;
     await prisma.$executeRawUnsafe('CREATE TABLE IF NOT EXISTS FeaturedMix (key TEXT PRIMARY KEY, value TEXT)');
     await prisma.$executeRawUnsafe('INSERT OR REPLACE INTO FeaturedMix (key, value) VALUES ("staff_mix_id", ?)', mixId || "");
+    if (mixId) { try { await prisma.albumMix.update({ where: { id: mixId }, data: { isPublic: true } }); } catch (e) {} }
     res.json({ ok: true, mixId });
   } catch (e) { next(e); }
 });
@@ -55,7 +56,26 @@ router.get("/", async (req, res, next) => {
       prisma.$queryRawUnsafe('SELECT value FROM FeaturedMix WHERE key = "staff_mix_id" LIMIT 1').catch(() => []),
     ]);
     const featuredMixId = featuredMixRow[0]?.value || null;
-    res.json({ aotd: aotd || null, interviews, featuredMixId });
+    // Serve the featured staff mix to EVERYONE (it's officially featured), so a
+    // private mix doesn't leave other users stuck on "loading".
+    let featuredMix = null;
+    if (featuredMixId) {
+      const m = await prisma.albumMix.findUnique({
+        where: { id: featuredMixId },
+        include: { items: { orderBy: { position: "asc" } }, user: { select: { username: true } } },
+      });
+      if (m) {
+        const ids = m.items.map((it) => it.albumId).filter(Boolean);
+        const albs = ids.length ? await prisma.album.findMany({ where: { id: { in: ids } } }) : [];
+        const byId = {}; albs.forEach((a) => (byId[a.id] = a));
+        featuredMix = {
+          id: m.id, title: m.title, description: m.description || "",
+          owner: m.user ? m.user.username : null,
+          albums: m.items.map((it) => ({ albumId: it.albumId, note: it.note || "", album: byId[it.albumId] || null })),
+        };
+      }
+    }
+    res.json({ aotd: aotd || null, interviews, featuredMixId, featuredMix });
   } catch (e) { next(e); }
 });
 
