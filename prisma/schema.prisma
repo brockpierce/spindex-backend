@@ -67,6 +67,7 @@ model Follow {
   followed User @relation("Followers", fields: [followedId], references: [id])
 
   @@unique([followerId, followedId])
+  @@index([followedId])
 }
 
 model Album {
@@ -174,6 +175,9 @@ model ReviewComment {
   user    User            @relation(fields: [userId], references: [id])
   parent  ReviewComment?  @relation("CommentThread", fields: [parentId], references: [id])
   replies ReviewComment[] @relation("CommentThread")
+
+  @@index([reviewId])
+  @@index([parentId])
 }
 
 model AlbumMix {

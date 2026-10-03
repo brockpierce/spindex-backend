@@ -107,6 +107,7 @@ router.get("/comments/:reviewId", optionalAuth, async (req, res, next) => {
       where: { reviewId: req.params.reviewId },
       include: { user: { select: { username: true } } },
       orderBy: { createdAt: "asc" },
+      take: 2000,
     });
     // Hide comments from users blocked in either direction.
     const blockedIds = await getBlockedIds(req.userId);

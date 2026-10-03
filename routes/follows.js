@@ -67,7 +67,7 @@ router.delete("/:userId", requireAuth, followLimiter, async (req, res, next) => 
 
 router.get("/:userId/followers", optionalAuth, async (req, res, next) => {
   try {
-    const follows = await prisma.follow.findMany({ where: { followedId: req.params.userId }, include: { follower: true } });
+    const follows = await prisma.follow.findMany({ where: { followedId: req.params.userId }, include: { follower: true }, take: 2000 });
     const users = await withFollowFlags(follows.map((f) => publicUser(f.follower)), req.userId);
     res.json({ users });
   } catch (e) { next(e); }
@@ -75,7 +75,7 @@ router.get("/:userId/followers", optionalAuth, async (req, res, next) => {
 
 router.get("/:userId/following", optionalAuth, async (req, res, next) => {
   try {
-    const follows = await prisma.follow.findMany({ where: { followerId: req.params.userId }, include: { followed: true } });
+    const follows = await prisma.follow.findMany({ where: { followerId: req.params.userId }, include: { followed: true }, take: 2000 });
     const users = await withFollowFlags(follows.map((f) => publicUser(f.followed)), req.userId);
     res.json({ users });
   } catch (e) { next(e); }
