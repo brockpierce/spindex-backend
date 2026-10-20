@@ -14,6 +14,20 @@ function str(v) {
   return v == null ? "" : String(v);
 }
 
+// GET /api/relistens/user/:userId — all of a user's re-listens across every album.
+// Public (profiles are public), so a visitor can see whose latest listen is which.
+// Declared before "/:albumId" so "user" isn't matched as an album id.
+router.get("/user/:userId", async (req, res, next) => {
+  try {
+    const relistens = await prisma.relisten.findMany({
+      where: { userId: req.params.userId },
+      orderBy: { number: "asc" },
+      take: 5000,
+    });
+    res.json({ relistens });
+  } catch (e) { res.json({ relistens: [] }); }
+});
+
 // GET /api/relistens/:albumId — the current user's re-listens for an album (oldest first).
 router.get("/:albumId", requireAuth, async (req, res, next) => {
   try {

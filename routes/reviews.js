@@ -98,10 +98,11 @@ router.put("/:albumId", requireAuth, async (req, res, next) => {
 router.delete("/:albumId", requireAuth, async (req, res, next) => {
   try {
     const { albumId } = req.params;
-    // deleteMany so no-op is fine if the review doesn't exist
-    await prisma.review.deleteMany({
-      where: { userId: req.userId, albumId },
-    });
+    // deleteMany so no-op is fine if the review doesn't exist. Also drop this
+    // album's re-listens: they hang off the original review, so removing the
+    // review must take its whole listen history (no orphaned re-listens).
+    await prisma.review.deleteMany({ where: { userId: req.userId, albumId } });
+    await prisma.relisten.deleteMany({ where: { userId: req.userId, albumId } });
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
