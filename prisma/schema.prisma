@@ -48,6 +48,7 @@ model User {
   conversations        ConversationParticipant[]
   sentMessages         DirectMessage[]
   albumsOfTheDay       AlbumOfTheDay[]
+  devices              Device[]
   interviews           Interview[]
   notificationsReceived Notification[] @relation("NotifRecipient")
   notificationsSent     Notification[] @relation("NotifActor")
@@ -499,4 +500,19 @@ model FeaturedAlbum {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+}
+
+// Registered push-notification device tokens (APNs/FCM). Scaffold for push;
+// the endpoint exists now so the client can register once push is wired up.
+model Device {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  platform  String   @default("ios")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

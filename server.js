@@ -106,6 +106,7 @@ app.use("/api/tags", require("./routes/tags"));
 app.use("/api/interactions", require("./routes/interactions"));
 app.use("/api/mixes", require("./routes/mixes"));
 app.use("/api/notifications", require("./routes/notifications"));
+app.use("/api/devices", require("./routes/devices"));
 app.use("/api/posts", require("./routes/posts"));
 app.use("/api/mix-shares", require("./routes/mixShares"));
 app.use("/api/messages", require("./routes/messages"));
