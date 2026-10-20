@@ -83,13 +83,21 @@ router.get("/:username", requireAuth, async (req, res, next) => {
     const wantComments = filter === "all" || filter === "comments";
     const wantPosts = filter === "all" || filter === "posts";
 
-    const [reviews, likes, comments, posts, reviewCount, likeCount, commentCount, postCount] = await Promise.all([
+    const [reviews, relistens, likes, comments, posts, reviewCount, relistenCount, likeCount, commentCount, postCount] = await Promise.all([
       wantReviews
         ? prisma.review.findMany({
             where: { userId: user.id, ...olderThan },
             orderBy: { createdAt: "desc" },
             take: PAGE + 1,
             // Stored album fields only — no Cover Art Archive lookup here.
+            include: { album: { select: { title: true, artistName: true, coverArtUrl: true } } },
+          })
+        : [],
+      wantReviews
+        ? prisma.relisten.findMany({
+            where: { userId: user.id, ...olderThan },
+            orderBy: { createdAt: "desc" },
+            take: PAGE + 1,
             include: { album: { select: { title: true, artistName: true, coverArtUrl: true } } },
           })
         : [],
@@ -115,6 +123,7 @@ router.get("/:username", requireAuth, async (req, res, next) => {
           })
         : [],
       prisma.review.count({ where: { userId: user.id } }),
+      prisma.relisten.count({ where: { userId: user.id } }),
       prisma.reviewReaction.count({ where: { userId: user.id, kind: "heart" } }),
       prisma.reviewComment.count({ where: { userId: user.id } }),
       prisma.textPost.count({ where: { userId: user.id } }),
@@ -140,6 +149,23 @@ router.get("/:username", requireAuth, async (req, res, next) => {
         albumArtist: rv.album ? rv.album.artistName : null,
         // Whatever is already stored. No lookup is triggered here.
         coverArtUrl: rv.album && rv.album.coverArtUrl !== "none" ? rv.album.coverArtUrl : null,
+      });
+    }
+
+    // Re-listens are review-type activity too — flagged so the UI can badge them.
+    for (const rl of relistens) {
+      rows.push({
+        type: "review",
+        id: rl.id,
+        isRelisten: true,
+        relistenNumber: rl.number,
+        date: rl.createdAt,
+        rating: rl.rating,
+        text: rl.review || "",
+        albumId: rl.albumId,
+        albumTitle: rl.album ? rl.album.title : null,
+        albumArtist: rl.album ? rl.album.artistName : null,
+        coverArtUrl: rl.album && rl.album.coverArtUrl !== "none" ? rl.album.coverArtUrl : null,
       });
     }
 
@@ -184,6 +210,7 @@ router.get("/:username", requireAuth, async (req, res, next) => {
     // can pull the merged length below PAGE and kill pagination early.
     const hasMore =
       reviews.length > PAGE ||
+      relistens.length > PAGE ||
       likes.length > PAGE ||
       comments.length > PAGE ||
       posts.length > PAGE ||
@@ -196,7 +223,7 @@ router.get("/:username", requireAuth, async (req, res, next) => {
       username: user.username,
       items: page,
       nextCursor,
-      counts: { reviews: reviewCount, posts: postCount, likes: likeCount, comments: commentCount },
+      counts: { reviews: reviewCount + relistenCount, posts: postCount, likes: likeCount, comments: commentCount },
     });
   } catch (e) { next(e); }
 });
