@@ -18,6 +18,25 @@ function cardFromReview(review) {
   };
 }
 
+// A re-listen reposts as a review-style card so the client renders it with the
+// existing review UI. Its own createdAt is the date, so re-listens surface as
+// fresh activity (unlike an edited original review, which keeps its old date).
+function cardFromRelisten(r) {
+  return {
+    itemType: "review",
+    id: r.id,
+    isRelisten: true,
+    relistenNumber: r.number,
+    username: r.user.username,
+    albumId: r.albumId,
+    rating: r.rating,
+    text: r.review,
+    favTrack: r.favoriteTrack || null,
+    leastFavTrack: r.leastFavoriteTrack || null,
+    date: r.createdAt,
+  };
+}
+
 function cardFromTextPost(post) {
   return {
     itemType: "textpost",
@@ -57,9 +76,12 @@ router.get("/", requireAuth, async (req, res, next) => {
     const blockedSet = new Set(blockedIds);
     const followedIds = follows.map((f) => f.followedId).filter((id) => !blockedSet.has(id));
 
-    const [reviews, textPosts, mixShares] = await Promise.all([
+    const [reviews, relistens, textPosts, mixShares] = await Promise.all([
       followedIds.length
         ? prisma.review.findMany({ where: { userId: { in: followedIds } }, include: { user: true }, orderBy: { createdAt: "desc" }, take: 50 })
+        : [],
+      followedIds.length
+        ? prisma.relisten.findMany({ where: { userId: { in: followedIds } }, include: { user: true }, orderBy: { createdAt: "desc" }, take: 50 })
         : [],
       followedIds.length
         ? prisma.textPost.findMany({ where: { userId: { in: followedIds } }, include: { user: true, images: { select: { position: true, width: true, height: true }, orderBy: { position: "asc" } } }, orderBy: { createdAt: "desc" }, take: 50 })
@@ -71,6 +93,7 @@ router.get("/", requireAuth, async (req, res, next) => {
 
     const feed = [
       ...reviews.map(cardFromReview),
+      ...relistens.map(cardFromRelisten),
       ...textPosts.map(cardFromTextPost),
       ...mixShares.map(cardFromMixShare),
     ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 50);
@@ -92,11 +115,18 @@ router.get("/public", requireAuth, async (req, res, next) => {
     const blockedIds = await getBlockedIds(req.userId);
     const notBlocked = blockedIds.length ? { userId: { notIn: blockedIds } } : {};
 
-    const [reviews, textPosts, mixShares] = await Promise.all([
+    const [reviews, relistens, textPosts, mixShares] = await Promise.all([
       prisma.review.findMany({
         // Written reviews only. `not: null` alone let empty strings through,
         // so a bare rating saved as "" still showed up in the everyone feed.
         where: { AND: [{ reviewText: { not: null } }, { reviewText: { not: "" } }, olderThan, notBlocked] },
+        include: { user: true },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+      }),
+      prisma.relisten.findMany({
+        // Written re-listens only, same rule as reviews above.
+        where: { AND: [{ review: { not: "" } }, olderThan, notBlocked] },
         include: { user: true },
         orderBy: { createdAt: "desc" },
         take: limit,
@@ -117,6 +147,7 @@ router.get("/public", requireAuth, async (req, res, next) => {
 
     const merged = [
       ...reviews.map(cardFromReview),
+      ...relistens.map(cardFromRelisten),
       ...textPosts.map(cardFromTextPost),
       ...mixShares.map(cardFromMixShare),
     ].sort((a, b) => new Date(b.date) - new Date(a.date));

@@ -22,14 +22,41 @@ function publicReview(review) {
   };
 }
 
-// GET /api/reviews/community-average — site-wide average of all ratings
+// Build the ratings that count toward an average. Each user contributes a
+// single vote per album: their LATEST rated listen. A re-listen with a rating
+// overrides that user's original rating (re-listens are not summed in as extra
+// votes); a re-listen with no rating leaves the previous one in place.
+async function effectiveRatings(where) {
+  const [reviews, relistens] = await Promise.all([
+    prisma.review.findMany({ where, select: { userId: true, albumId: true, rating: true } }),
+    prisma.relisten.findMany({
+      where: { ...where, rating: { not: null } },
+      select: { userId: true, albumId: true, rating: true },
+      orderBy: { number: "asc" },
+    }),
+  ]);
+  // Highest-numbered rated re-listen per user+album wins (asc order → last set).
+  const override = new Map();
+  for (const r of relistens) override.set(r.userId + "|" + r.albumId, r.rating);
+  const ratings = [];
+  for (const rv of reviews) {
+    if (rv.rating == null) continue;
+    const key = rv.userId + "|" + rv.albumId;
+    ratings.push(override.has(key) ? override.get(key) : rv.rating);
+  }
+  return ratings;
+}
+
+function summarize(ratings) {
+  const count = ratings.length;
+  const average = count ? ratings.reduce((a, b) => a + b, 0) / count : null;
+  return { average, count };
+}
+
+// GET /api/reviews/community-average — site-wide average (latest rating per user+album).
 router.get("/community-average", async (req, res, next) => {
   try {
-    const result = await prisma.review.aggregate({
-      _avg: { rating: true },
-      _count: { rating: true },
-    });
-    res.json({ average: result._avg.rating, count: result._count.rating });
+    res.json(summarize(await effectiveRatings({})));
   } catch (e) { res.json({ average: null, count: 0 }); }
 });
 
@@ -38,12 +65,7 @@ router.get("/community-average", async (req, res, next) => {
 // matched as an album id.
 router.get("/album-average/:albumId", async (req, res) => {
   try {
-    const result = await prisma.review.aggregate({
-      where: { albumId: req.params.albumId },
-      _avg: { rating: true },
-      _count: { rating: true },
-    });
-    res.json({ average: result._avg.rating, count: result._count.rating });
+    res.json(summarize(await effectiveRatings({ albumId: req.params.albumId })));
   } catch (e) { res.json({ average: null, count: 0 }); }
 });
 
@@ -58,7 +80,9 @@ router.put("/:albumId", requireAuth, async (req, res, next) => {
     if (!album) return res.status(404).json({ error: "Album not found." });
     const review = await prisma.review.upsert({
       where: { userId_albumId: { userId: req.userId, albumId } },
-      update: { rating, reviewText, favTrack, leastFavTrack, createdAt: new Date() },
+      // Keep the original listen date on edit so editing never reposts the
+      // review to the feed or the top of the profile. Only re-listens repost.
+      update: { rating, reviewText, favTrack, leastFavTrack },
       create: { userId: req.userId, albumId, rating, reviewText, favTrack, leastFavTrack },
     });
     await prisma.listenStatus.upsert({

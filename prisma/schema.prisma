@@ -49,6 +49,7 @@ model User {
   sentMessages         DirectMessage[]
   albumsOfTheDay       AlbumOfTheDay[]
   devices              Device[]
+  relistens            Relisten[]
   interviews           Interview[]
   notificationsReceived Notification[] @relation("NotifRecipient")
   notificationsSent     Notification[] @relation("NotifActor")
@@ -100,6 +101,7 @@ model Album {
   albumTags    AlbumTag[]
   mixItems     AlbumMixItem[]
   qotdResponses QotdResponse[]
+  relistens    Relisten[]
   featured     FeaturedAlbum?
 
   @@index([title])
@@ -515,4 +517,28 @@ model Device {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+// A re-listen: a later listen of an album logged by a user, with its own
+// rating/review, without touching their original Review. Numbered per
+// user+album ("Re-listen #n"). For the community average, a user's latest
+// rated listen counts as their single vote (see routes/reviews.js); re-listens
+// are not summed in separately.
+model Relisten {
+  id                 String   @id @default(cuid())
+  userId             String
+  albumId            String
+  number             Int
+  rating             Int?
+  review             String   @default("")
+  favoriteTrack      String   @default("")
+  leastFavoriteTrack String   @default("")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  album Album @relation(fields: [albumId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, albumId, number])
+  @@index([userId, albumId])
 }
