@@ -1,6 +1,7 @@
 const express = require("express");
 const { PrismaClient } = require("@prisma/client");
 const { requireAuth } = require("../middleware/auth");
+const { isBlockedBetween } = require("../lib/blocks");
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -29,6 +30,12 @@ router.post("/:username", requireAuth, async (req, res) => {
 
     const author = await prisma.user.findUnique({ where: { id: req.userId } });
     if (!author) return res.status(401).json({ error: "Not authenticated" });
+
+    // A block (either direction) forbids signing that person's guestbook.
+    const owner = await prisma.user.findUnique({ where: { username: req.params.username.toLowerCase() }, select: { id: true } });
+    if (owner && await isBlockedBetween(author.id, owner.id)) {
+      return res.status(403).json({ error: "You can't sign this guestbook." });
+    }
 
     const entry = await prisma.guestbookEntry.create({
       data: {
