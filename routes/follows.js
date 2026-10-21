@@ -2,6 +2,7 @@ const express = require("express");
 const prisma = require("../lib/prisma");
 const { requireAuth, optionalAuth } = require("../middleware/auth");
 const { perUserLimiter } = require("../lib/rateLimit");
+const { isBlockedBetween } = require("../lib/blocks");
 
 const followLimiter = perUserLimiter({ windowMs: 60 * 1000, max: 60, message: "You're following/unfollowing too fast." });
 const router = express.Router();
@@ -32,6 +33,10 @@ router.post("/:userId", requireAuth, followLimiter, async (req, res, next) => {
     if (userId === req.userId) return res.status(400).json({ error: "You can't follow yourself." });
     const targetUser = await prisma.user.findUnique({ where: { id: userId } });
     if (!targetUser) return res.status(404).json({ error: "User not found." });
+    // A block (either direction) forbids following.
+    if (await isBlockedBetween(req.userId, userId)) {
+      return res.status(403).json({ error: "You can't follow this user." });
+    }
     await prisma.follow.upsert({
       where: { followerId_followedId: { followerId: req.userId, followedId: userId } },
       update: {},

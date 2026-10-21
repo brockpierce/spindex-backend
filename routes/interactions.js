@@ -3,11 +3,27 @@ const prisma = require("../lib/prisma");
 const { notifyMentions } = require("../lib/notifyMentions");
 const { requireAuth, optionalAuth } = require("../middleware/auth");
 const { perUserLimiter } = require("../lib/rateLimit");
-const { getBlockedIds } = require("../lib/blocks");
+const { getBlockedIds, isBlockedBetween } = require("../lib/blocks");
 
 const reactLimiter = perUserLimiter({ windowMs: 60 * 1000, max: 120, message: "You're reacting too fast." });
 const commentLimiter = perUserLimiter({ windowMs: 60 * 1000, max: 30, message: "You're commenting too fast." });
 const router = express.Router();
+
+// Resolve the owner of a reactable/commentable target. `reviewId` is polymorphic
+// (Review, TextPost, MixShare, SongReview, or QotdResponse), so check each.
+async function resolveOwnerId(id) {
+  const review = await prisma.review.findUnique({ where: { id }, select: { userId: true } }).catch(() => null);
+  if (review) return review.userId;
+  const tp = await prisma.textPost.findUnique({ where: { id }, select: { userId: true } }).catch(() => null);
+  if (tp) return tp.userId;
+  const ms = await prisma.mixShare.findUnique({ where: { id }, select: { userId: true } }).catch(() => null);
+  if (ms) return ms.userId;
+  const sr = await prisma.songReview.findUnique({ where: { id }, select: { userId: true } }).catch(() => null);
+  if (sr) return sr.userId;
+  const qr = await prisma.qotdResponse.findUnique({ where: { id }, select: { userId: true } }).catch(() => null);
+  if (qr) return qr.userId;
+  return null;
+}
 
 // ============================================================
 // REACTIONS
@@ -31,6 +47,12 @@ router.put("/reactions/:reviewId", requireAuth, reactLimiter, async (req, res, n
     const { kind } = req.body;
     if (!["heart", "frown"].includes(kind)) {
       return res.status(400).json({ error: "kind must be 'heart' or 'frown'" });
+    }
+
+    // A block (either direction) forbids reacting to that person's content.
+    const ownerId = await resolveOwnerId(reviewId);
+    if (ownerId && ownerId !== req.userId && await isBlockedBetween(req.userId, ownerId)) {
+      return res.status(403).json({ error: "You can't react to this." });
     }
 
     const existing = await prisma.reviewReaction.findUnique({
@@ -132,6 +154,11 @@ router.post("/comments/:reviewId", requireAuth, commentLimiter, async (req, res,
     const qotdResponse = !review && !textPost && !mixShare && !songReview ? await prisma.qotdResponse.findUnique({ where: { id: reviewId }, select: { id: true, userId: true } }).catch(() => null) : null;
     if (!review && !textPost && !mixShare && !songReview && !qotdResponse) return res.status(404).json({ error: "Post not found." });
     const ownerId = review ? review.userId : (textPost ? textPost.userId : (mixShare ? mixShare.userId : (songReview ? songReview.userId : qotdResponse.userId)));
+
+    // A block (either direction) forbids commenting on that person's content.
+    if (ownerId && ownerId !== req.userId && await isBlockedBetween(req.userId, ownerId)) {
+      return res.status(403).json({ error: "You can't comment on this." });
+    }
 
     if (parentId) {
       const parent = await prisma.reviewComment.findUnique({ where: { id: parentId } });
