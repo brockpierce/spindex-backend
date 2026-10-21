@@ -7,6 +7,7 @@ const prisma = require("../lib/prisma");
 const { requireAuth, JWT_SECRET } = require("../middleware/auth");
 const { validateImageDataUrl } = require("../lib/imageValidation");
 const { deleteUserCompletely } = require("../lib/deleteUser");
+const { checkUsername } = require("../lib/reservedUsernames");
 const { Resend } = require("resend");
 
 // Key code limiters on the target email; fall back to an IPv6-safe IP key when
@@ -139,6 +140,8 @@ router.post("/signup", async (req, res) => {
   if (!/^[a-z0-9_]{2,20}$/.test(normalizedUsername)) {
     return res.status(400).json({ error: "Usernames can only use letters, numbers and underscores, and must be 2-20 characters." });
   }
+  const signupNameCheck = checkUsername(normalizedUsername);
+  if (!signupNameCheck.ok) return res.status(409).json({ error: signupNameCheck.reason });
   const existingUsername = await prisma.user.findUnique({ where: { username: normalizedUsername } });
   if (existingUsername) return res.status(409).json({ error: "That username is already taken." });
 
@@ -362,10 +365,10 @@ router.put("/profile", requireAuth, async (req, res) => {
     if (!/^[a-z0-9_]{2,20}$/.test(normalized)) {
       return res.status(400).json({ error: "Usernames can only use letters, numbers and underscores, and must be 2-20 characters." });
     }
-    // Reserved names can't be claimed via a rename.
-    const RESERVED = new Set(["admin", "administrator", "root", "support", "staff", "noteblock", "mod", "moderator", "system"]);
-    if (RESERVED.has(normalized)) {
-      return res.status(409).json({ error: "That username is reserved." });
+    // Reserved and offensive names can't be claimed via a rename either.
+    const renameNameCheck = checkUsername(normalized);
+    if (!renameNameCheck.ok) {
+      return res.status(409).json({ error: renameNameCheck.reason });
     }
     // Check if someone else already has this username
     const existing = await prisma.user.findUnique({ where: { username: normalized } });
