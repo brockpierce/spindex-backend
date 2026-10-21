@@ -355,27 +355,34 @@ router.put("/profile", requireAuth, async (req, res) => {
     }
   }
 
-  // Handle username change with uniqueness check
+  // Handle username change with uniqueness check. Only validate when the
+  // username is ACTUALLY changing — clients re-send the current username on an
+  // unrelated save (name/bio/avatar), and running the format/reserved/uniqueness
+  // checks on an unchanged name would lock out any account whose own name is now
+  // reserved (e.g. the admin's "brock") from saving anything.
   if (username !== undefined) {
     const normalized = username.toLowerCase().trim();
-    // Same rule as signup: letters/numbers/underscore, 2-20 chars. The change
-    // route previously allowed arbitrary characters up to 30, which let a user
-    // set an unsafe username (breaks URL interpolation) or a homoglyph
-    // impersonation of another account.
-    if (!/^[a-z0-9_]{2,20}$/.test(normalized)) {
-      return res.status(400).json({ error: "Usernames can only use letters, numbers and underscores, and must be 2-20 characters." });
+    const me = await prisma.user.findUnique({ where: { id: req.userId }, select: { username: true } });
+    if (me && normalized !== me.username) {
+      // Same rule as signup: letters/numbers/underscore, 2-20 chars. The change
+      // route previously allowed arbitrary characters up to 30, which let a user
+      // set an unsafe username (breaks URL interpolation) or a homoglyph
+      // impersonation of another account.
+      if (!/^[a-z0-9_]{2,20}$/.test(normalized)) {
+        return res.status(400).json({ error: "Usernames can only use letters, numbers and underscores, and must be 2-20 characters." });
+      }
+      // Reserved and offensive names can't be claimed via a rename either.
+      const renameNameCheck = checkUsername(normalized);
+      if (!renameNameCheck.ok) {
+        return res.status(409).json({ error: renameNameCheck.reason });
+      }
+      // Check if someone else already has this username
+      const existing = await prisma.user.findUnique({ where: { username: normalized } });
+      if (existing && existing.id !== req.userId) {
+        return res.status(409).json({ error: "That username is already taken." });
+      }
+      data.username = normalized;
     }
-    // Reserved and offensive names can't be claimed via a rename either.
-    const renameNameCheck = checkUsername(normalized);
-    if (!renameNameCheck.ok) {
-      return res.status(409).json({ error: renameNameCheck.reason });
-    }
-    // Check if someone else already has this username
-    const existing = await prisma.user.findUnique({ where: { username: normalized } });
-    if (existing && existing.id !== req.userId) {
-      return res.status(409).json({ error: "That username is already taken." });
-    }
-    data.username = normalized;
   }
 
   const user = await prisma.user.update({ where: { id: req.userId }, data });
