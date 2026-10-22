@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const { JWT_SECRET, requireAuth, optionalAuth } = require("../middleware/auth");
 const { validateImageDataUrl } = require("../lib/imageValidation");
 const { isBlockedBetween } = require("../lib/blocks");
+const { BADGES, computeLiveBadges } = require("../lib/badges");
 
 const router = express.Router();
 
@@ -133,6 +134,65 @@ router.get("/:username", optionalAuth, async (req, res, next) => {
     // the flag lets the client hide their content and offer unblock instead.
     const blocked = req.userId ? await isBlockedBetween(req.userId, user.id) : false;
     res.json({ user: { ...publicUser(user, followedIds), blocked } });
+  } catch (e) { next(e); }
+});
+
+// GET /api/users/:id/badges -> UserBadge[] for all 11 badges, in display order.
+// :id may be a user id or a username. Lazily persists newly-earned badges so
+// they're permanent (a later drop below a threshold won't revoke them). Degrades
+// to live-only computation if the UserBadge table hasn't been migrated yet.
+router.get("/:id/badges", optionalAuth, async (req, res, next) => {
+  try {
+    const key = req.params.id;
+    const target = await prisma.user.findFirst({
+      where: { OR: [{ id: key }, { username: key }] },
+      select: { id: true },
+    });
+    if (!target) return res.status(404).json({ error: "User not found." });
+
+    const live = await computeLiveBadges(target.id);
+
+    // Load any already-earned badges. If the table isn't migrated yet this
+    // throws; we swallow it and fall back to live-derived dates (no persistence).
+    let storedMap = new Map();
+    let canPersist = false;
+    try {
+      const stored = await prisma.userBadge.findMany({
+        where: { userId: target.id },
+        select: { badgeId: true, earnedAt: true },
+      });
+      storedMap = new Map(stored.map((b) => [b.badgeId, b.earnedAt]));
+      canPersist = true;
+    } catch (_) {
+      /* UserBadge table not present yet — compute-only mode */
+    }
+
+    if (canPersist) {
+      const toCreate = [];
+      for (const def of BADGES) {
+        const s = live[def.id];
+        if (s.earned && !storedMap.has(def.id)) {
+          const earnedAt = s.earnedAt || new Date();
+          toCreate.push({ userId: target.id, badgeId: def.id, earnedAt });
+          storedMap.set(def.id, earnedAt);
+        }
+      }
+      if (toCreate.length) {
+        await prisma.userBadge.createMany({ data: toCreate, skipDuplicates: true }).catch(() => {});
+      }
+    }
+
+    const result = BADGES.map((def) => {
+      const s = live[def.id];
+      const earnedAt = storedMap.get(def.id) || (s.earned ? s.earnedAt : null);
+      const out = { id: def.id, earnedAt: earnedAt ? new Date(earnedAt).toISOString() : null };
+      if (!earnedAt && def.goal) {
+        out.progress = s.progress;
+        out.goal = def.goal;
+      }
+      return out;
+    });
+    res.json(result);
   } catch (e) { next(e); }
 });
 

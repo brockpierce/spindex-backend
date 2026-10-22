@@ -50,12 +50,27 @@ model User {
   albumsOfTheDay       AlbumOfTheDay[]
   devices              Device[]
   relistens            Relisten[]
+  badges               UserBadge[]
   interviews           Interview[]
   notificationsReceived Notification[] @relation("NotifRecipient")
   notificationsSent     Notification[] @relation("NotifActor")
 
   following Follow[] @relation("Following")
   followers Follow[] @relation("Followers")
+}
+
+// Profile badges earned from activity. One row per (user, badge); the row's
+// existence means earned, and earnedAt is when it was first recorded.
+model UserBadge {
+  id        String   @id @default(cuid())
+  userId    String
+  badgeId   String
+  earnedAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId])
+  @@index([userId])
 }
 
 model Follow {
