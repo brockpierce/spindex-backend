@@ -1,7 +1,28 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
 const { requireAuth, optionalAuth } = require("../middleware/auth");
+const { withCachedCover } = require("../lib/covercache");
 const router = express.Router();
+
+// Attach each item's album (with a disk-cached cover URL) so clients can render
+// cover art in one request instead of fetching every album separately. One bulk
+// query, not one per album. `album` is null for an album row that no longer
+// exists. Fields are trimmed to what the cover stack and detail views need.
+async function embedAlbums(items) {
+  const base = items.map((i) => ({ albumId: i.albumId, note: i.note || "" }));
+  const ids = [...new Set(items.map((i) => i.albumId).filter(Boolean))];
+  if (!ids.length) return base.map((b) => ({ ...b, album: null }));
+  const rows = await prisma.album.findMany({
+    where: { id: { in: ids } },
+    select: {
+      id: true, title: true, artistName: true, coverArtUrl: true,
+      musicbrainzId: true, releaseYear: true, releaseType: true,
+    },
+  });
+  const byId = {};
+  for (const a of rows) byId[a.id] = withCachedCover(a);
+  return base.map((b) => ({ ...b, album: byId[b.albumId] || null }));
+}
 
 // GET /api/mixes — list current user's album mixes
 router.get("/", requireAuth, async (req, res, next) => {
@@ -13,14 +34,14 @@ router.get("/", requireAuth, async (req, res, next) => {
       },
       orderBy: { createdAt: "desc" },
     });
-    // Shape to match frontend expectations: { id, title, description, albums: [{ albumId, note }] }
-    const shaped = mixes.map((m) => ({
+    // Shape to match frontend expectations: { id, title, description, albums: [{ albumId, note, album }] }
+    const shaped = await Promise.all(mixes.map(async (m) => ({
       id: m.id,
       title: m.title,
       description: m.description || "",
       isPublic: m.isPublic !== false,
-      albums: m.items.map((item) => ({ albumId: item.albumId, note: item.note || "" })),
-    }));
+      albums: await embedAlbums(m.items),
+    })));
     res.json({ mixes: shaped });
   } catch (e) { next(e); }
 });
@@ -59,13 +80,13 @@ router.get("/user/:userId", async (req, res, next) => {
       include: { items: { orderBy: { position: "asc" } } },
       orderBy: { createdAt: "desc" },
     });
-    res.json({ mixes: mixes.map((m) => ({
+    res.json({ mixes: await Promise.all(mixes.map(async (m) => ({
       id: m.id,
       title: m.title,
       description: m.description || "",
       isPublic: true,
-      albums: m.items.map((i) => ({ albumId: i.albumId, note: i.note || "" })),
-    })) });
+      albums: await embedAlbums(m.items),
+    }))) });
   } catch (e) { next(e); }
 });
 
@@ -77,14 +98,14 @@ router.get("/saved", requireAuth, async (req, res, next) => {
       include: { mix: { include: { items: { orderBy: { position: "asc" } }, user: { select: { username: true } } } } },
       orderBy: { createdAt: "desc" },
     });
-    const mixes = saved.filter((s) => s.mix).map((s) => ({
+    const mixes = await Promise.all(saved.filter((s) => s.mix).map(async (s) => ({
       id: s.mix.id,
       title: s.mix.title,
       description: s.mix.description || "",
       isPublic: s.mix.isPublic !== false,
       owner: s.mix.user ? s.mix.user.username : null,
-      albums: s.mix.items.map((item) => ({ albumId: item.albumId, note: item.note || "" })),
-    }));
+      albums: await embedAlbums(s.mix.items),
+    })));
     res.json({ mixes });
   } catch (e) { next(e); }
 });
@@ -102,21 +123,15 @@ router.get("/:id", optionalAuth, async (req, res, next) => {
     if (m.isPublic === false && m.userId !== req.userId) {
       return res.status(404).json({ error: "Mix not found." });
     }
-    // Attach album records so clients can render cover art without having
-    // browsed these albums first. One extra query, not one per album.
-    const mixAlbumIds = m.items.map((item) => item.albumId).filter(Boolean);
-    const mixAlbums = mixAlbumIds.length
-      ? await prisma.album.findMany({ where: { id: { in: mixAlbumIds } } })
-      : [];
-    const mixAlbumById = {};
-    for (const a of mixAlbums) mixAlbumById[a.id] = a;
+    // Attach album records (with disk-cached cover URLs) so clients can render
+    // cover art without having browsed these albums first. One extra query.
     res.json({ mix: {
       id: m.id,
       title: m.title,
       description: m.description || "",
       isPublic: m.isPublic !== false,
       owner: m.user ? m.user.username : null,
-      albums: m.items.map((item) => ({ albumId: item.albumId, note: item.note || "", album: mixAlbumById[item.albumId] || null })),
+      albums: await embedAlbums(m.items),
     } });
   } catch (e) { next(e); }
 });
