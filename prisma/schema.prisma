@@ -25,6 +25,7 @@ model User {
   verifyToken  String?
   verifyTokenExpiry DateTime?
   age          String?
+  termsVersion String?  // last accepted Terms version; null = never accepted on this account
   birthday     String?  // "YYYY-MM-DD", null for accounts created before this existed
   town         String?
   country      String?

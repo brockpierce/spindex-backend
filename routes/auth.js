@@ -55,6 +55,7 @@ function publicUser(user) {
     displayName: user.displayName,
     bio: user.bio,
     avatarUrl: user.avatarUrl,
+    termsVersion: user.termsVersion || null,
   };
 }
 
@@ -329,6 +330,21 @@ router.get("/me", async (req, res) => {
     res.json({ user: publicUser(user) });
   } catch {
     res.json({ user: null });
+  }
+});
+
+// POST /api/auth/accept-terms — record the Terms version the user accepted, so
+// the agreement gate is remembered on the account instead of only in the
+// browser's localStorage (which iOS Safari evicts, and which differs between the
+// web, the home-screen icon, and the native app's web view).
+router.post("/accept-terms", requireAuth, async (req, res) => {
+  const version = req.body && typeof req.body.version === "string" ? req.body.version.slice(0, 40) : null;
+  if (!version) return res.status(400).json({ error: "version required." });
+  try {
+    const user = await prisma.user.update({ where: { id: req.userId }, data: { termsVersion: version } });
+    res.json({ user: publicUser(user) });
+  } catch (e) {
+    res.status(500).json({ error: "Could not record acceptance." });
   }
 });
 

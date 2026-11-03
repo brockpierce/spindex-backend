@@ -144,4 +144,22 @@ process.on("uncaughtException", (err) => {
   // Don't exit -- log and continue so the server stays up
 });
 
-app.listen(PORT, () => console.log(`Server running at http://localhost:${PORT}`));
+// Idempotent additive-column guard. This project applies schema changes
+// directly rather than through Prisma Migrate, so ensure any newly-added column
+// exists before the server takes traffic — a Prisma query selects every scalar
+// field, and a missing column would break every User lookup. Re-adding an
+// existing column throws and is harmlessly ignored.
+const prisma = require("./lib/prisma");
+async function ensureColumns() {
+  const adds = [
+    'ALTER TABLE "User" ADD COLUMN "termsVersion" TEXT',
+  ];
+  for (const sql of adds) {
+    try { await prisma.$executeRawUnsafe(sql); console.log("schema guard applied:", sql); }
+    catch (e) { /* column already exists — expected on every boot after the first */ }
+  }
+}
+
+ensureColumns().finally(() => {
+  app.listen(PORT, () => console.log(`Server running at http://localhost:${PORT}`));
+});
