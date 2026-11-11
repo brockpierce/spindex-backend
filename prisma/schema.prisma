@@ -26,6 +26,7 @@ model User {
   verifyTokenExpiry DateTime?
   age          String?
   termsVersion String?  // last accepted Terms version; null = never accepted on this account
+  tokenVersion Int      @default(0) // in every JWT; bumped on password reset to end all sessions
   birthday     String?  // "YYYY-MM-DD", null for accounts created before this existed
   town         String?
   country      String?

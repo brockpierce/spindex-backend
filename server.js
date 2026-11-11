@@ -1,5 +1,9 @@
 require("dotenv").config();
 const express = require("express");
+// Express 4 ignores rejected promises from async handlers, so a throw left the
+// request hanging until the client gave up. This forwards them to the error
+// handler below, which answers with a JSON 500.
+require("express-async-errors");
 const cors = require("cors");
 const helmet = require("helmet");
 const compression = require("compression");
@@ -65,16 +69,19 @@ app.use(express.json({ limit: "1mb" }));
 app.set("trust proxy", 1);
 
 // Strict limiter on auth (brute-force / spam-signup protection)
+const AUTH_LIMITED_PATHS = new Set(["/login", "/signup", "/verify-email", "/resend-verification", "/forgot-password", "/reset-password"]);
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 min
   max: 20,                  // 20 auth attempts per IP per window
   standardHeaders: true,
   legacyHeaders: false,
-  // Only throttle POSTs. Login, signup, forgot- and reset-password are the
-  // brute-force targets. GET /api/auth/me is the session check that runs on
-  // EVERY page load — limiting it to 20 per 15 minutes was logging users out
-  // after ~20 page loads. It stays covered by apiLimiter below.
-  skip: (req) => req.method === "GET",
+  // Only throttle the brute-force targets: login, signup and the code/password
+  // endpoints. GET /api/auth/me is the session check that runs on EVERY page
+  // load — limiting it to 20 per 15 minutes was logging users out after ~20
+  // page loads — and profile saves, Terms acceptance and account deletion
+  // shouldn't eat into someone's login attempts either. All stay covered by
+  // apiLimiter below.
+  skip: (req) => !AUTH_LIMITED_PATHS.has(req.path),
   message: { error: "Too many attempts. Please try again in a few minutes." },
 });
 
@@ -153,6 +160,7 @@ const prisma = require("./lib/prisma");
 async function ensureColumns() {
   const adds = [
     'ALTER TABLE "User" ADD COLUMN "termsVersion" TEXT',
+    'ALTER TABLE "User" ADD COLUMN "tokenVersion" INTEGER NOT NULL DEFAULT 0',
   ];
   for (const sql of adds) {
     try { await prisma.$executeRawUnsafe(sql); console.log("schema guard applied:", sql); }
