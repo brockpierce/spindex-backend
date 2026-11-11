@@ -1,0 +1,35 @@
+name: keep-backend-warm
+
+# Pings the Render backend so it doesn't cold-start. A sleeping instance makes
+# the first login hang ~30-60s, which risks an App Review rejection for an
+# "unresponsive" app. Keeping it warm avoids that. Harmless (a no-op) if the
+# service is already on a paid, always-on Render instance.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *" # every 10 minutes (UTC)
+  workflow_dispatch: {} # allow manual runs from the Actions tab
+
+# If a run is still going when the next is scheduled, skip the new one.
+concurrency:
+  group: keep-warm
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /api/health
+        run: |
+          url="https://spindex-backend.onrender.com/api/health"
+          for attempt in 1 2 3; do
+            # Long timeout so a cold start is woken (and thereby warmed) rather
+            # than abandoned mid-wake.
+            if curl -fsS --max-time 120 "$url" -o /dev/null -w 'ok (http %{http_code}, %{time_total}s)\n'; then
+              exit 0
+            fi
+            echo "attempt $attempt failed, retrying in 20s..."
+            sleep 20
+          done
+          echo "all attempts failed"
+          exit 1
