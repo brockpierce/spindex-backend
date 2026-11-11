@@ -105,7 +105,9 @@ function isDeprioritized(album) {
 // Returns all albums by an artist, sorted by release year.
 router.get("/by-artist/:artistName", async (req, res, next) => {
   try {
-    const artistName = decodeURIComponent(req.params.artistName);
+    // Express has already decoded the param; decoding again threw URIError on
+    // names containing "%" (e.g. "100% Pure").
+    const artistName = req.params.artistName;
 
     // Find albums matching this exact artistName (case-sensitive on SQLite)
     const albums = await prisma.album.findMany({
@@ -164,7 +166,8 @@ router.get("/trending", async (req, res, next) => {
 
 
 router.get("/", async (req, res) => {
-  const search = (req.query.search || "").trim();
+  // ?search=a&search=b arrives as an array; .trim() on it used to hang the request.
+  const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 200) : "";
   const limit = Math.min(parseInt(req.query.limit, 10) || 50, 100);
 
   let raw = [];
@@ -314,6 +317,9 @@ const coverHandler = makeCoverHandler(async (mbid) => {
     if (album && album.coverArtUrl && album.coverArtUrl !== "none") {
       return album.coverArtUrl.replace("http://", "https://");
     }
+    // Only albums we know about are stored on disk. Anything else still gets a
+    // cover via redirect, but can't be used to fill the disk id by id.
+    if (!album) return { url: `https://coverartarchive.org/release-group/${mbid}/front-500`, cache: false };
   } catch (e) { /* fall through */ }
   return `https://coverartarchive.org/release-group/${mbid}/front-500`;
 });
