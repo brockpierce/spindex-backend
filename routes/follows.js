@@ -42,9 +42,14 @@ router.post("/:userId", requireAuth, followLimiter, async (req, res, next) => {
       update: {},
       create: { followerId: req.userId, followedId: userId },
     });
-    // Notify the person being followed
+    // Notify the person being followed — once. Re-following (or a repeated
+    // request) used to stack up identical "followed you" notifications.
     try {
-      await prisma.notification.create({
+      const notified = await prisma.notification.findFirst({
+        where: { recipientId: userId, actorId: req.userId, type: "follow" },
+        select: { id: true },
+      });
+      if (!notified) await prisma.notification.create({
         data: {
           recipientId: userId,
           actorId: req.userId,

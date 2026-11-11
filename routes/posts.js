@@ -4,6 +4,7 @@ const { ipKeyGenerator } = rateLimit;
 const prisma = require("../lib/prisma");
 const { notifyMentions } = require("../lib/notifyMentions");
 const { requireAuth } = require("../middleware/auth");
+const { itemTraceDeletes } = require("../lib/itemCleanup");
 const { validateImageDataUrl } = require("../lib/imageValidation");
 const router = express.Router();
 
@@ -44,8 +45,11 @@ router.get("/", requireAuth, async (req, res, next) => {
 router.post("/", requireAuth, postCreateLimiter, async (req, res, next) => {
   try {
     const { text } = req.body;
-    if (!text || !text.trim()) {
+    if (typeof text !== "string" || !text.trim()) {
       return res.status(400).json({ error: "Post text required." });
+    }
+    if (text.length > 5000) {
+      return res.status(400).json({ error: "Posts can be at most 5000 characters." });
     }
 
     // Validate images: optional, max 3, each an allowed image data URL under cap.
@@ -94,8 +98,12 @@ router.delete("/:id", requireAuth, async (req, res, next) => {
     }
     // Explicit image delete in addition to the onDelete: Cascade FK — the manual
     // schema apply means we don't want to rely on FK enforcement being on.
-    await prisma.textPostImage.deleteMany({ where: { textPostId: req.params.id } });
-    await prisma.textPost.delete({ where: { id: req.params.id } });
+    // deleteMany so a double-tapped delete is a no-op rather than a 500.
+    await prisma.$transaction([
+      prisma.textPostImage.deleteMany({ where: { textPostId: req.params.id } }),
+      ...itemTraceDeletes([req.params.id]),
+      prisma.textPost.deleteMany({ where: { id: req.params.id } }),
+    ]);
     res.json({ ok: true });
   } catch (e) { next(e); }
 });

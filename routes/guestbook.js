@@ -1,10 +1,12 @@
 const express = require("express");
-const { PrismaClient } = require("@prisma/client");
+// Shared client (WAL + busy_timeout), not a second PrismaClient.
+const prisma = require("../lib/prisma");
 const { requireAuth } = require("../middleware/auth");
 const { isBlockedBetween } = require("../lib/blocks");
+const { perUserLimiter } = require("../lib/rateLimit");
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const signLimiter = perUserLimiter({ windowMs: 60 * 1000, max: 10, message: "You're signing guestbooks too fast." });
 
 // GET /api/guestbook/:username — list entries (public)
 router.get("/:username", async (req, res) => {
@@ -22,18 +24,21 @@ router.get("/:username", async (req, res) => {
 });
 
 // POST /api/guestbook/:username — sign (requires auth)
-router.post("/:username", requireAuth, async (req, res) => {
+router.post("/:username", requireAuth, signLimiter, async (req, res) => {
   try {
-    const message = (req.body.message || "").trim();
+    const message = typeof req.body.message === "string" ? req.body.message.trim() : "";
     if (!message) return res.status(400).json({ error: "Message required" });
     if (message.length > 500) return res.status(400).json({ error: "Message too long" });
 
     const author = await prisma.user.findUnique({ where: { id: req.userId } });
     if (!author) return res.status(401).json({ error: "Not authenticated" });
 
-    // A block (either direction) forbids signing that person's guestbook.
+    // Only existing profiles -- entries left for a not-yet-registered (or
+    // renamed-away) username would greet whoever claims it next.
     const owner = await prisma.user.findUnique({ where: { username: req.params.username.toLowerCase() }, select: { id: true } });
-    if (owner && await isBlockedBetween(author.id, owner.id)) {
+    if (!owner) return res.status(404).json({ error: "User not found" });
+    // A block (either direction) forbids signing that person's guestbook.
+    if (await isBlockedBetween(author.id, owner.id)) {
       return res.status(403).json({ error: "You can't sign this guestbook." });
     }
 

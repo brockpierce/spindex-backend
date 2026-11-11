@@ -1,6 +1,7 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
 const { requireAuth } = require("../middleware/auth");
+const { isBlockedBetween } = require("../lib/blocks");
 const router = express.Router();
 
 const PAGE = 25;
@@ -69,6 +70,8 @@ router.get("/:username", requireAuth, async (req, res, next) => {
       select: { id: true, username: true },
     });
     if (!user) return res.status(404).json({ error: "User not found." });
+    // Blocking hides a person's activity in both directions, like their posts.
+    if (await isBlockedBetween(req.userId, user.id)) return res.status(404).json({ error: "User not found." });
 
     const filter = ["reviews", "posts", "likes", "comments"].includes(req.query.filter)
       ? req.query.filter

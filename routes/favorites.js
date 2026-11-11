@@ -38,9 +38,16 @@ router.post("/:albumId", requireAuth, async (req, res, next) => {
     if (existing.length >= MAX_FAVORITES) {
       return res.status(400).json({ error: `Max ${MAX_FAVORITES} favorites. Remove one first.` });
     }
-    const favorite = await prisma.favorite.create({
-      data: { userId: req.userId, albumId, position: existing.length + 1 },
-    });
+    let favorite;
+    try {
+      favorite = await prisma.favorite.create({
+        data: { userId: req.userId, albumId, position: existing.length + 1 },
+      });
+    } catch (err) {
+      // A double-tap races two creates past the check above.
+      if (err.code === "P2002") return res.status(409).json({ error: "Already favorited." });
+      throw err;
+    }
     res.status(201).json({ favorite });
   } catch (e) { next(e); }
 });
