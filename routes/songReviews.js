@@ -1,9 +1,11 @@
 const express = require("express");
-const { PrismaClient } = require("@prisma/client");
+// Shared client: a second PrismaClient here skipped the WAL/busy_timeout setup
+// in lib/prisma.js and could hit "database is locked" under concurrent writes.
+const prisma = require("../lib/prisma");
 const { requireAuth } = require("../middleware/auth");
+const { itemTraceDeletes } = require("../lib/itemCleanup");
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 // POST /api/song-reviews — create a song review (body text REQUIRED)
 router.post("/", requireAuth, async (req, res) => {
@@ -86,7 +88,10 @@ router.delete("/:id", requireAuth, async (req, res) => {
     const row = await prisma.songReview.findUnique({ where: { id: req.params.id } });
     if (!row) return res.status(404).json({ error: "Not found." });
     if (row.userId !== req.userId) return res.status(403).json({ error: "Not authorized." });
-    await prisma.songReview.delete({ where: { id: req.params.id } });
+    await prisma.$transaction([
+      ...itemTraceDeletes([req.params.id]),
+      prisma.songReview.deleteMany({ where: { id: req.params.id } }),
+    ]);
     res.json({ ok: true });
   } catch (e) {
     console.error("song review delete error", e);

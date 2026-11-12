@@ -2,6 +2,7 @@ const express = require("express");
 const prisma = require("../lib/prisma");
 const { notifyMentions } = require("../lib/notifyMentions");
 const { requireAuth } = require("../middleware/auth");
+const { itemTraceDeletes } = require("../lib/itemCleanup");
 
 const router = express.Router();
 
@@ -72,9 +73,16 @@ router.get("/album-average/:albumId", async (req, res) => {
 router.put("/:albumId", requireAuth, async (req, res, next) => {
   try {
     const { albumId } = req.params;
-    const { rating, reviewText, favTrack, leastFavTrack } = req.body;
-    if (!rating || rating < 1 || rating > 10) {
+    const { reviewText, favTrack, leastFavTrack } = req.body;
+    // Whole numbers only: "abc" used to 500 and 7.5 was silently stored as 7.
+    const rating = Number(req.body.rating);
+    if (!Number.isInteger(rating) || rating < 1 || rating > 10) {
       return res.status(400).json({ error: "Rating must be 1-10." });
+    }
+    for (const [value, max] of [[reviewText, 10000], [favTrack, 200], [leastFavTrack, 200]]) {
+      if (value != null && (typeof value !== "string" || value.length > max)) {
+        return res.status(400).json({ error: `That's too long (max ${max} characters).` });
+      }
     }
     const album = await prisma.album.findUnique({ where: { id: albumId } });
     if (!album) return res.status(404).json({ error: "Album not found." });
@@ -90,7 +98,7 @@ router.put("/:albumId", requireAuth, async (req, res, next) => {
       update: { status: "listened" },
       create: { userId: req.userId, albumId, status: "listened" },
     });
-    await notifyMentions(reviewText, req.userId, review.id);
+    await notifyMentions(reviewText, req.userId, review.id, { once: true });
     res.json({ review: publicReview(review) });
   } catch (e) { next(e); }
 });
@@ -101,8 +109,12 @@ router.delete("/:albumId", requireAuth, async (req, res, next) => {
     // deleteMany so no-op is fine if the review doesn't exist. Also drop this
     // album's re-listens: they hang off the original review, so removing the
     // review must take its whole listen history (no orphaned re-listens).
-    await prisma.review.deleteMany({ where: { userId: req.userId, albumId } });
-    await prisma.relisten.deleteMany({ where: { userId: req.userId, albumId } });
+    const ids = (await prisma.review.findMany({ where: { userId: req.userId, albumId }, select: { id: true } })).map((r) => r.id);
+    await prisma.$transaction([
+      ...itemTraceDeletes(ids),
+      prisma.review.deleteMany({ where: { userId: req.userId, albumId } }),
+      prisma.relisten.deleteMany({ where: { userId: req.userId, albumId } }),
+    ]);
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
@@ -111,7 +123,7 @@ router.get("/album/:albumId", async (req, res, next) => {
   try {
     const reviews = await prisma.review.findMany({
       where: { albumId: req.params.albumId },
-      include: { user: true },
+      include: { user: { select: { id: true, username: true, displayName: true } } },
       orderBy: { createdAt: "desc" },
       take: 50,
     });
@@ -123,7 +135,7 @@ router.get("/user/:userId", async (req, res, next) => {
   try {
     const reviews = await prisma.review.findMany({
       where: { userId: req.params.userId },
-      include: { user: true },
+      include: { user: { select: { id: true, username: true, displayName: true } } },
       orderBy: { createdAt: "desc" },
     });
     res.json({ reviews: reviews.map(publicReview) });

@@ -4,6 +4,10 @@ const { requireAuth } = require("../middleware/auth");
 const { getBlockedIds } = require("../lib/blocks");
 const router = express.Router();
 
+// Cards only show the username. `user: true` loaded whole user rows, including
+// avatar and profile-drawing image data, for every card.
+const USERNAME = { select: { username: true } };
+
 function cardFromReview(review) {
   return {
     itemType: "review",
@@ -78,16 +82,16 @@ router.get("/", requireAuth, async (req, res, next) => {
 
     const [reviews, relistens, textPosts, mixShares] = await Promise.all([
       followedIds.length
-        ? prisma.review.findMany({ where: { userId: { in: followedIds } }, include: { user: true }, orderBy: { createdAt: "desc" }, take: 50 })
+        ? prisma.review.findMany({ where: { userId: { in: followedIds } }, include: { user: USERNAME }, orderBy: { createdAt: "desc" }, take: 50 })
         : [],
       followedIds.length
-        ? prisma.relisten.findMany({ where: { userId: { in: followedIds } }, include: { user: true }, orderBy: { createdAt: "desc" }, take: 50 })
+        ? prisma.relisten.findMany({ where: { userId: { in: followedIds } }, include: { user: USERNAME }, orderBy: { createdAt: "desc" }, take: 50 })
         : [],
       followedIds.length
-        ? prisma.textPost.findMany({ where: { userId: { in: followedIds } }, include: { user: true, images: { select: { position: true, width: true, height: true }, orderBy: { position: "asc" } } }, orderBy: { createdAt: "desc" }, take: 50 })
+        ? prisma.textPost.findMany({ where: { userId: { in: followedIds } }, include: { user: USERNAME, images: { select: { position: true, width: true, height: true }, orderBy: { position: "asc" } } }, orderBy: { createdAt: "desc" }, take: 50 })
         : [],
       followedIds.length
-        ? prisma.mixShare.findMany({ where: { userId: { in: followedIds } }, include: { user: true }, orderBy: { createdAt: "desc" }, take: 20 })
+        ? prisma.mixShare.findMany({ where: { userId: { in: followedIds } }, include: { user: USERNAME }, orderBy: { createdAt: "desc" }, take: 20 })
         : [],
     ]);
 
@@ -105,7 +109,8 @@ router.get("/", requireAuth, async (req, res, next) => {
 // GET /api/feed/public — everyone feed (reviews + text posts from anyone)
 router.get("/public", requireAuth, async (req, res, next) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit || "25", 10), 100);
+    const n = parseInt(req.query.limit, 10);
+    const limit = Number.isFinite(n) && n > 0 ? Math.min(n, 100) : 25;
     // Cursor: only items strictly older than this. Ignored if unparseable, so
     // a malformed value returns the first page rather than erroring.
     const beforeRaw = req.query.before;
@@ -120,26 +125,26 @@ router.get("/public", requireAuth, async (req, res, next) => {
         // Written reviews only. `not: null` alone let empty strings through,
         // so a bare rating saved as "" still showed up in the everyone feed.
         where: { AND: [{ reviewText: { not: null } }, { reviewText: { not: "" } }, olderThan, notBlocked] },
-        include: { user: true },
+        include: { user: USERNAME },
         orderBy: { createdAt: "desc" },
         take: limit,
       }),
       prisma.relisten.findMany({
         // Written re-listens only, same rule as reviews above.
         where: { AND: [{ review: { not: "" } }, olderThan, notBlocked] },
-        include: { user: true },
+        include: { user: USERNAME },
         orderBy: { createdAt: "desc" },
         take: limit,
       }),
       prisma.textPost.findMany({
         where: { AND: [olderThan, notBlocked] },
-        include: { user: true, images: { select: { position: true, width: true, height: true }, orderBy: { position: "asc" } } },
+        include: { user: USERNAME, images: { select: { position: true, width: true, height: true }, orderBy: { position: "asc" } } },
         orderBy: { createdAt: "desc" },
         take: limit,
       }),
       prisma.mixShare.findMany({
         where: { AND: [olderThan, notBlocked] },
-        include: { user: true },
+        include: { user: USERNAME },
         orderBy: { createdAt: "desc" },
         take: limit,
       }),
@@ -153,9 +158,12 @@ router.get("/public", requireAuth, async (req, res, next) => {
     ].sort((a, b) => new Date(b.date) - new Date(a.date));
 
     const feed = merged.slice(0, limit);
-    // A short page means we've reached the end — null tells the client to
-    // stop offering "load more".
-    const nextCursor = merged.length > limit && feed.length
+    // More may exist if the merge overflowed OR any single source came back
+    // full. Checking only the merge stopped paging once older pages held only
+    // reviews (reviews alone return exactly `limit`). null = end, so the client
+    // stops offering "load more".
+    const sourceFull = [reviews, relistens, textPosts, mixShares].some((rows) => rows.length === limit);
+    const nextCursor = feed.length && (merged.length > limit || sourceFull)
       ? feed[feed.length - 1].date
       : null;
 

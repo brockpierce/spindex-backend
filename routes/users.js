@@ -19,7 +19,9 @@ const PROFILE_DRAWING_MAX_BYTES = 800 * 1024; // canvas doodle; larger than an a
 function cssColorOrGradientOk(v, maxLen) {
   if (typeof v !== "string") return false;
   if (v.length > maxLen) return false;
-  if (/url\s*\(|image-set|expression|javascript:|@import|[<>{};]/i.test(v)) return false;
+  // Backslashes and quotes too: CSS escapes ("u\\72 l(" reads as "url(")
+  // would otherwise slip past the keyword checks.
+  if (/url\s*\(|image-set|expression|javascript:|@import|[<>{};\\"'`]/i.test(v)) return false;
   return true;
 }
 

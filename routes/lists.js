@@ -32,17 +32,20 @@ router.get("/me", requireAuth, async (req, res) => {
 router.get("/saved", requireAuth, async (req, res) => {
   const saved = await prisma.savedList.findMany({
     where: { userId: req.userId },
-    include: { list: { include: { items: true, user: true } } },
+    include: { list: { include: { items: true, user: { select: { id: true, username: true } } } } },
     orderBy: { createdAt: "desc" },
   });
-  res.json({ lists: saved.map((s) => publicList(s.list)) });
+  // A list its owner has since made private drops out of everyone else's saves.
+  const visible = saved.filter((s) => s.list && (s.list.isPublic !== false || s.list.userId === req.userId));
+  res.json({ lists: visible.map((s) => publicList(s.list)) });
 });
 
 // POST /api/lists/:listId/save
 router.post("/:listId/save", requireAuth, async (req, res) => {
   const { listId } = req.params;
   const list = await prisma.list.findUnique({ where: { id: listId } });
-  if (!list) return res.status(404).json({ error: "List not found." });
+  // 404 for private lists too, same as GET /:id, so saving can't be used to read one.
+  if (!list || (list.isPublic === false && list.userId !== req.userId)) return res.status(404).json({ error: "List not found." });
   if (list.userId === req.userId) {
     return res.status(400).json({ error: "That's your own list." });
   }
@@ -64,8 +67,11 @@ router.delete("/:listId/save", requireAuth, async (req, res) => {
 // POST /api/lists  { title, description }
 router.post("/", requireAuth, async (req, res) => {
   const { title, description } = req.body;
-  if (!title || !title.trim()) {
+  if (typeof title !== "string" || !title.trim()) {
     return res.status(400).json({ error: "List title is required." });
+  }
+  if (title.length > 100 || (description != null && (typeof description !== "string" || description.length > 1000))) {
+    return res.status(400).json({ error: "Title or description is too long." });
   }
   const list = await prisma.list.create({
     data: { userId: req.userId, title: title.trim(), description: description || null },
@@ -78,7 +84,7 @@ router.post("/", requireAuth, async (req, res) => {
 router.get("/:id", optionalAuth, async (req, res) => {
   const list = await prisma.list.findUnique({
     where: { id: req.params.id },
-    include: { items: { orderBy: { position: "asc" } }, user: true },
+    include: { items: { orderBy: { position: "asc" } }, user: { select: { id: true, username: true } } },
   });
   if (!list) return res.status(404).json({ error: "List not found." });
   // A private list is visible only to its owner. 404 (not 403) so the route
@@ -96,6 +102,7 @@ router.get("/:id", optionalAuth, async (req, res) => {
 router.post("/:id/items", requireAuth, async (req, res) => {
   const { id } = req.params;
   const { albumId } = req.body;
+  if (typeof albumId !== "string" || !albumId) return res.status(400).json({ error: "albumId required." });
 
   const list = await prisma.list.findUnique({ where: { id } });
   if (!list) return res.status(404).json({ error: "List not found." });
@@ -103,6 +110,9 @@ router.post("/:id/items", requireAuth, async (req, res) => {
     return res.status(403).json({ error: "You can only edit your own lists." });
   }
 
+  if (!(await prisma.album.findUnique({ where: { id: albumId }, select: { id: true } }))) {
+    return res.status(404).json({ error: "Album not found." });
+  }
   const existingCount = await prisma.listItem.count({ where: { listId: id } });
   const item = await prisma.listItem.upsert({
     where: { listId_albumId: { listId: id, albumId } },

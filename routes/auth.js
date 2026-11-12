@@ -1,10 +1,11 @@
 const express = require("express");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 const rateLimit = require("express-rate-limit");
 const { ipKeyGenerator } = rateLimit;
 const prisma = require("../lib/prisma");
-const { requireAuth, JWT_SECRET } = require("../middleware/auth");
+const { requireAuth, userIdFromHeader, JWT_SECRET } = require("../middleware/auth");
 const { validateImageDataUrl } = require("../lib/imageValidation");
 const { deleteUserCompletely } = require("../lib/deleteUser");
 const { checkUsername } = require("../lib/reservedUsernames");
@@ -59,13 +60,31 @@ function publicUser(user) {
   };
 }
 
-function makeToken(userId) {
-  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: "30d" });
+// `tv` ties the token to the account's tokenVersion (see middleware/auth.js).
+function makeToken(user) {
+  return jwt.sign({ userId: user.id, tv: user.tokenVersion || 0 }, JWT_SECRET, { expiresIn: "30d" });
+}
+
+// 6-digit one-time code from a CSPRNG (Math.random is predictable).
+function sixDigitCode() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
+// Emails are matched case-insensitively and stored lowercased from now on, so
+// "Foo@x.com" and "foo@x.com" can't become two accounts. Older rows may still
+// hold mixed case, hence the lower() lookup rather than findUnique.
+function normalizeEmail(email) {
+  return typeof email === "string" ? email.trim().toLowerCase() : "";
+}
+async function findUserByEmail(email) {
+  if (!email) return null;
+  const rows = await prisma.$queryRaw`SELECT id FROM "User" WHERE lower(email) = ${email} LIMIT 1`;
+  return rows.length ? prisma.user.findUnique({ where: { id: rows[0].id } }) : null;
 }
 
 // Generate a 6-digit code, save it to the user as a verify token (24h expiry), and email it.
 async function sendVerificationCode(user) {
-  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const code = sixDigitCode();
   const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
   await prisma.user.update({
     where: { id: user.id },
@@ -111,12 +130,22 @@ function ageFromBirthday(b) {
 
 // POST /api/auth/signup
 router.post("/signup", async (req, res) => {
-  const { email, password, username, birthday } = req.body;
+  const { password, username, birthday } = req.body;
+  const email = normalizeEmail(req.body.email);
   // Collapse whitespace/newlines and cap length so no one can set a giant or
   // layout-breaking display name at signup (the update route already caps it).
   const displayName = String(req.body.displayName || "").replace(/\s+/g, " ").trim().slice(0, 60);
   if (!email || !password || !username || !displayName) {
     return res.status(400).json({ error: "Email, password, username, and display name are all required." });
+  }
+  if (typeof password !== "string" || typeof username !== "string" || (birthday && typeof birthday !== "string")) {
+    return res.status(400).json({ error: "Invalid signup details." });
+  }
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: "Please enter a valid email address." });
+  }
+  if (password.length > 200) {
+    return res.status(400).json({ error: "Password is too long." });
   }
   if (password.length < 8) {
     return res.status(400).json({ error: "Password needs to be at least 8 characters." });
@@ -133,7 +162,7 @@ router.post("/signup", async (req, res) => {
       return res.status(400).json({ error: "You must be at least 16 to use noteblock." });
     }
   }
-  const existingEmail = await prisma.user.findUnique({ where: { email } });
+  const existingEmail = await findUserByEmail(email);
   if (existingEmail) return res.status(409).json({ error: "An account with that email already exists." });
   const normalizedUsername = username.toLowerCase().trim();
   // Letters, numbers and underscore only. Anything else — @, /, ., spaces,
@@ -181,14 +210,17 @@ router.post("/signup", async (req, res) => {
 
   try { await sendVerificationCode(user); } catch (e) { console.error("send verify on signup failed:", e.message); }
 
-  res.status(201).json({ user: publicUser(user), token: makeToken(user.id), needsVerification: true });
+  // No token until the email is verified -- the client logs in after verifying.
+  res.status(201).json({ user: publicUser(user), needsVerification: true });
 });
 
 // POST /api/auth/login
 router.post("/login", async (req, res) => {
-  const { email, password } = req.body;
+  const email = normalizeEmail(req.body.email);
+  const { password } = req.body;
   if (!email || !password) return res.status(400).json({ error: "Email and password are required." });
-  const user = await prisma.user.findUnique({ where: { email } });
+  if (typeof password !== "string" || password.length > 200) return res.status(401).json({ error: "Incorrect email or password." });
+  const user = await findUserByEmail(email);
   if (!user) return res.status(401).json({ error: "Incorrect email or password." });
   const passwordMatches = await bcrypt.compare(password, user.passwordHash);
   if (!passwordMatches) return res.status(401).json({ error: "Incorrect email or password." });
@@ -196,7 +228,7 @@ router.post("/login", async (req, res) => {
     try { await sendVerificationCode(user); } catch (e) { console.error("resend on login failed:", e.message); }
     return res.status(403).json({ needsVerification: true, email: user.email });
   }
-  res.json({ user: publicUser(user), token: makeToken(user.id) });
+  res.json({ user: publicUser(user), token: makeToken(user) });
 });
 
 // POST /api/auth/logout -- client just deletes the token, nothing to do server-side
@@ -205,9 +237,10 @@ router.post("/logout", (req, res) => res.json({ ok: true }));
 // POST /api/auth/verify-email  { email, code }
 router.post("/verify-email", codeGuessLimiter, async (req, res) => {
   try {
-    const { email, code } = req.body;
+    const email = normalizeEmail(req.body.email);
+    const { code } = req.body;
     if (!email || !code) return res.status(400).json({ error: "Email and code are required." });
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await findUserByEmail(email);
     if (!user || !user.verifyToken || !user.verifyTokenExpiry) {
       return res.status(400).json({ error: "Invalid or expired code." });
     }
@@ -231,9 +264,9 @@ router.post("/verify-email", codeGuessLimiter, async (req, res) => {
 // POST /api/auth/resend-verification  { email }
 router.post("/resend-verification", codeSendLimiter, async (req, res) => {
   try {
-    const { email } = req.body;
+    const email = normalizeEmail(req.body.email);
     if (!email) return res.status(400).json({ error: "Email is required." });
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await findUserByEmail(email);
     if (user && !user.emailVerified) {
       await sendVerificationCode(user);
     }
@@ -247,13 +280,13 @@ router.post("/resend-verification", codeSendLimiter, async (req, res) => {
 // POST /api/auth/forgot-password  { email }
 router.post("/forgot-password", codeSendLimiter, async (req, res) => {
   try {
-    const { email } = req.body;
+    const email = normalizeEmail(req.body.email);
     if (!email) return res.status(400).json({ error: "Email is required." });
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await findUserByEmail(email);
     // Always respond success (do not reveal whether the email is registered)
     if (user) {
-      const code = String(Math.floor(100000 + Math.random() * 900000)); // 6 digits
+      const code = sixDigitCode();
       const expiry = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
       await prisma.user.update({
         where: { id: user.id },
@@ -264,7 +297,7 @@ router.post("/forgot-password", codeSendLimiter, async (req, res) => {
         try {
           await resend.emails.send({
             from: RESET_FROM,
-            to: email,
+            to: user.email,
             subject: "Your noteblock password reset code",
             text: `Your password reset code is ${code}. It expires in 15 minutes. If you did not request this, you can ignore this email.`,
             html: `<p>Your password reset code is:</p><p style="font-size:28px;font-weight:700;letter-spacing:4px;">${code}</p><p>It expires in 15 minutes. If you did not request this, you can ignore this email.</p>`,
@@ -287,15 +320,19 @@ router.post("/forgot-password", codeSendLimiter, async (req, res) => {
 // POST /api/auth/reset-password  { email, code, newPassword }
 router.post("/reset-password", codeGuessLimiter, async (req, res) => {
   try {
-    const { email, code, newPassword } = req.body;
+    const email = normalizeEmail(req.body.email);
+    const { code, newPassword } = req.body;
     if (!email || !code || !newPassword) {
       return res.status(400).json({ error: "Email, code, and new password are all required." });
+    }
+    if (typeof newPassword !== "string" || newPassword.length > 200) {
+      return res.status(400).json({ error: "Invalid password." });
     }
     if (newPassword.length < 8) {
       return res.status(400).json({ error: "Password must be at least 8 characters." });
     }
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await findUserByEmail(email);
     if (!user || !user.resetToken || !user.resetTokenExpiry) {
       return res.status(400).json({ error: "Invalid or expired code." });
     }
@@ -309,7 +346,9 @@ router.post("/reset-password", codeGuessLimiter, async (req, res) => {
     const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     await prisma.user.update({
       where: { id: user.id },
-      data: { passwordHash, resetToken: null, resetTokenExpiry: null },
+      // Bumping tokenVersion signs out every existing session -- if someone else
+      // had access to the account, the reset locks them out.
+      data: { passwordHash, resetToken: null, resetTokenExpiry: null, tokenVersion: { increment: 1 } },
     });
 
     return res.json({ ok: true });
@@ -321,11 +360,9 @@ router.post("/reset-password", codeGuessLimiter, async (req, res) => {
 
 // GET /api/auth/me
 router.get("/me", async (req, res) => {
-  const header = req.headers.authorization;
-  if (!header || !header.startsWith("Bearer ")) return res.json({ user: null });
   try {
-    const { userId } = jwt.verify(header.slice(7), JWT_SECRET);
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const userId = await userIdFromHeader(req.headers.authorization);
+    const user = userId && (await prisma.user.findUnique({ where: { id: userId } }));
     if (!user) return res.json({ user: null });
     res.json({ user: publicUser(user) });
   } catch {

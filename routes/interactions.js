@@ -49,9 +49,10 @@ router.put("/reactions/:reviewId", requireAuth, reactLimiter, async (req, res, n
       return res.status(400).json({ error: "kind must be 'heart' or 'frown'" });
     }
 
-    // A block (either direction) forbids reacting to that person's content.
     const ownerId = await resolveOwnerId(reviewId);
-    if (ownerId && ownerId !== req.userId && await isBlockedBetween(req.userId, ownerId)) {
+    if (!ownerId) return res.status(404).json({ error: "Post not found." });
+    // A block (either direction) forbids reacting to that person's content.
+    if (ownerId !== req.userId && await isBlockedBetween(req.userId, ownerId)) {
       return res.status(403).json({ error: "You can't react to this." });
     }
 
@@ -66,15 +67,27 @@ router.put("/reactions/:reviewId", requireAuth, reactLimiter, async (req, res, n
         await prisma.reviewReaction.update({ where: { id: existing.id }, data: { kind } });
       }
     } else {
-      await prisma.reviewReaction.create({ data: { reviewId, userId: req.userId, kind } });
-
-      // Notify review owner (only on new reaction, not toggle-off)
+      let created = true;
       try {
-        const review = await prisma.review.findUnique({ where: { id: reviewId }, select: { userId: true } });
-        if (review && review.userId !== req.userId) {
+        await prisma.reviewReaction.create({ data: { reviewId, userId: req.userId, kind } });
+      } catch (err) {
+        // A double-tap races two creates; the loser hits the unique index.
+        if (err.code !== "P2002") throw err;
+        created = false;
+      }
+
+      // Notify the owner of whatever was reacted to (review, post, mix share,
+      // song review or QOTD answer) — once per person per item, so toggling a
+      // heart off and on doesn't send a fresh notification each time.
+      try {
+        const notified = created && ownerId !== req.userId && await prisma.notification.findFirst({
+          where: { recipientId: ownerId, actorId: req.userId, type: "reaction", referenceId: reviewId },
+          select: { id: true },
+        });
+        if (created && ownerId !== req.userId && !notified) {
           await prisma.notification.create({
             data: {
-              recipientId: review.userId,
+              recipientId: ownerId,
               actorId: req.userId,
               type: "reaction",
               referenceId: reviewId,
@@ -142,8 +155,11 @@ router.post("/comments/:reviewId", requireAuth, commentLimiter, async (req, res,
   try {
     const { reviewId } = req.params;
     const { text, parentId } = req.body;
-    if (!text || !text.trim()) {
+    if (typeof text !== "string" || !text.trim()) {
       return res.status(400).json({ error: "Comment text required." });
+    }
+    if (text.length > 2000) {
+      return res.status(400).json({ error: "Comments can be at most 2000 characters." });
     }
 
     // Allow comments on Review, TextPost, MixShare, and SongReview — look up all
@@ -192,7 +208,8 @@ router.post("/comments/:reviewId", requireAuth, commentLimiter, async (req, res,
       }
       if (parentId) {
         const parentComment = await prisma.reviewComment.findUnique({ where: { id: parentId } });
-        if (parentComment && parentComment.userId !== req.userId && parentComment.userId !== ownerId) {
+        if (parentComment && parentComment.userId !== req.userId && parentComment.userId !== ownerId
+            && !(await isBlockedBetween(req.userId, parentComment.userId))) {
           await prisma.notification.create({
             data: {
               recipientId: parentComment.userId,
@@ -226,7 +243,7 @@ router.delete("/comments/:commentId", requireAuth, async (req, res, next) => {
     const comment = await prisma.reviewComment.findUnique({ where: { id: req.params.commentId } });
     if (!comment) return res.status(404).json({ error: "Comment not found." });
     if (comment.userId !== req.userId) return res.status(403).json({ error: "Not your comment." });
-    await prisma.reviewComment.delete({ where: { id: req.params.commentId } });
+    await prisma.reviewComment.deleteMany({ where: { id: req.params.commentId } });
     res.json({ ok: true });
   } catch (e) { next(e); }
 });

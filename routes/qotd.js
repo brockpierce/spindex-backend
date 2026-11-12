@@ -1,6 +1,7 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
 const { requireAuth } = require("../middleware/auth");
+const { itemTraceDeletes } = require("../lib/itemCleanup");
 const router = express.Router();
 
 // Shape a row the way the feed expects it.
@@ -36,26 +37,20 @@ router.get("/", async (req, res, next) => {
 router.post("/", requireAuth, async (req, res, next) => {
   try {
     const { albumId, questionText } = req.body;
-    if (!albumId || !questionText) {
+    if (typeof albumId !== "string" || typeof questionText !== "string" || !albumId || !questionText || questionText.length > 300) {
       return res.status(400).json({ error: "albumId and questionText required." });
     }
     const album = await prisma.album.findUnique({ where: { id: albumId } });
     if (!album) return res.status(404).json({ error: "Album not found." });
 
-    const existing = await prisma.qotdResponse.findUnique({
+    // upsert, not find-then-create: a double-tap raced two creates into the
+    // unique index and returned a 500.
+    const row = await prisma.qotdResponse.upsert({
       where: { userId_questionText: { userId: req.userId, questionText } },
+      update: { albumId },
+      create: { userId: req.userId, albumId, questionText },
+      include: { user: { select: { username: true } }, album: true },
     });
-
-    const row = existing
-      ? await prisma.qotdResponse.update({
-          where: { id: existing.id },
-          data: { albumId },
-          include: { user: { select: { username: true } }, album: true },
-        })
-      : await prisma.qotdResponse.create({
-          data: { userId: req.userId, albumId, questionText },
-          include: { user: { select: { username: true } }, album: true },
-        });
 
     res.status(201).json({ item: shape(row) });
   } catch (e) { next(e); }
@@ -67,7 +62,10 @@ router.delete("/:id", requireAuth, async (req, res, next) => {
     const row = await prisma.qotdResponse.findUnique({ where: { id: req.params.id } });
     if (!row) return res.status(404).json({ error: "Not found." });
     if (row.userId !== req.userId) return res.status(403).json({ error: "Not yours." });
-    await prisma.qotdResponse.delete({ where: { id: req.params.id } });
+    await prisma.$transaction([
+      ...itemTraceDeletes([req.params.id]),
+      prisma.qotdResponse.deleteMany({ where: { id: req.params.id } }),
+    ]);
     res.json({ ok: true });
   } catch (e) { next(e); }
 });

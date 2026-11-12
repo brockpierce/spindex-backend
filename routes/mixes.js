@@ -2,6 +2,7 @@ const express = require("express");
 const prisma = require("../lib/prisma");
 const { requireAuth, optionalAuth } = require("../middleware/auth");
 const { withCachedCover } = require("../lib/covercache");
+const { itemTraceDeletes } = require("../lib/itemCleanup");
 const router = express.Router();
 
 // Attach each item's album (with a disk-cached cover URL) so clients can render
@@ -50,9 +51,10 @@ router.get("/", requireAuth, async (req, res, next) => {
 router.post("/", requireAuth, async (req, res, next) => {
   try {
     const { title } = req.body;
-    if (!title || !title.trim()) {
+    if (typeof title !== "string" || !title.trim()) {
       return res.status(400).json({ error: "Title required." });
     }
+    if (title.length > 100) return res.status(400).json({ error: "Title is too long (max 100 characters)." });
     const mix = await prisma.albumMix.create({
       data: { userId: req.userId, title: title.trim() },
     });
@@ -67,7 +69,16 @@ router.delete("/:id", requireAuth, async (req, res, next) => {
     if (!mix || mix.userId !== req.userId) {
       return res.status(404).json({ error: "Mix not found." });
     }
-    await prisma.albumMix.delete({ where: { id: req.params.id } });
+    // Other people's saves of this mix block the delete (SavedMix FK is
+    // RESTRICT), and feed shares of it would point at nothing — remove both.
+    const shareIds = (await prisma.mixShare.findMany({ where: { mixId: mix.id }, select: { id: true } })).map((s) => s.id);
+    await prisma.$transaction([
+      prisma.savedMix.deleteMany({ where: { mixId: mix.id } }),
+      ...itemTraceDeletes(shareIds),
+      prisma.mixShare.deleteMany({ where: { mixId: mix.id } }),
+      prisma.albumMixItem.deleteMany({ where: { mixId: mix.id } }),
+      prisma.albumMix.deleteMany({ where: { id: mix.id } }),
+    ]);
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
@@ -98,7 +109,9 @@ router.get("/saved", requireAuth, async (req, res, next) => {
       include: { mix: { include: { items: { orderBy: { position: "asc" } }, user: { select: { username: true } } } } },
       orderBy: { createdAt: "desc" },
     });
-    const mixes = await Promise.all(saved.filter((s) => s.mix).map(async (s) => ({
+    // A mix its owner has since made private drops out of everyone else's saves.
+    const visible = saved.filter((s) => s.mix && (s.mix.isPublic !== false || s.mix.userId === req.userId));
+    const mixes = await Promise.all(visible.map(async (s) => ({
       id: s.mix.id,
       title: s.mix.title,
       description: s.mix.description || "",
@@ -144,6 +157,12 @@ router.put("/:id", requireAuth, async (req, res, next) => {
       return res.status(404).json({ error: "Mix not found." });
     }
     const { title, description, isPublic } = req.body;
+    if (title !== undefined && (typeof title !== "string" || !title.trim() || title.length > 100)) {
+      return res.status(400).json({ error: "Title must be 1-100 characters." });
+    }
+    if (description != null && (typeof description !== "string" || description.length > 1000)) {
+      return res.status(400).json({ error: "Description is too long (max 1000 characters)." });
+    }
     const updated = await prisma.albumMix.update({
       where: { id: req.params.id },
       data: {
@@ -167,15 +186,25 @@ router.post("/:id/albums", requireAuth, async (req, res, next) => {
       return res.status(404).json({ error: "Mix not found." });
     }
     const { albumId, note } = req.body;
-    if (!albumId) return res.status(400).json({ error: "albumId required." });
+    if (typeof albumId !== "string" || !albumId) return res.status(400).json({ error: "albumId required." });
+    if (note != null && (typeof note !== "string" || note.length > 500)) return res.status(400).json({ error: "Note is too long." });
+    if (!(await prisma.album.findUnique({ where: { id: albumId }, select: { id: true } }))) {
+      return res.status(404).json({ error: "Album not found." });
+    }
     // Check for duplicates
     if (mix.items.some((i) => i.albumId === albumId)) {
       return res.status(409).json({ error: "Album already in mix." });
     }
     const position = mix.items.length + 1;
-    await prisma.albumMixItem.create({
-      data: { mixId: req.params.id, albumId, position, note: note || null },
-    });
+    try {
+      await prisma.albumMixItem.create({
+        data: { mixId: req.params.id, albumId, position, note: note || null },
+      });
+    } catch (err) {
+      // Two quick adds of the same album race past the duplicate check above.
+      if (err.code === "P2002") return res.status(409).json({ error: "Album already in mix." });
+      throw err;
+    }
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
@@ -203,7 +232,8 @@ module.exports = router;
 router.post("/:id/save", requireAuth, async (req, res, next) => {
   try {
     const mix = await prisma.albumMix.findUnique({ where: { id: req.params.id } });
-    if (!mix) return res.status(404).json({ error: "Mix not found." });
+    // 404 for private mixes too, same as GET /:id, so saving can't be used to read one.
+    if (!mix || (mix.isPublic === false && mix.userId !== req.userId)) return res.status(404).json({ error: "Mix not found." });
     if (mix.userId === req.userId) return res.status(400).json({ error: "Can't save your own mix." });
     await prisma.savedMix.upsert({
       where: { userId_mixId: { userId: req.userId, mixId: req.params.id } },
@@ -225,12 +255,13 @@ router.delete("/:id/save", requireAuth, async (req, res, next) => {
 router.put("/:id/reorder", requireAuth, async (req, res, next) => {
   try {
     const { albumIds } = req.body;
-    if (!Array.isArray(albumIds)) return res.status(400).json({ error: "albumIds required." });
-    const mix = await prisma.albumMix.findUnique({ where: { id: req.params.id } });
+    if (!Array.isArray(albumIds) || albumIds.some((id) => typeof id !== "string")) return res.status(400).json({ error: "albumIds required." });
+    const mix = await prisma.albumMix.findUnique({ where: { id: req.params.id }, include: { _count: { select: { items: true } } } });
     if (!mix) return res.status(404).json({ error: "Mix not found." });
     if (mix.userId !== req.userId) return res.status(403).json({ error: "Not your mix." });
-    // Update positions
-    await Promise.all(albumIds.map((albumId, position) =>
+    // Bounded by the mix's own size so one request can't queue thousands of writes.
+    if (albumIds.length > mix._count.items) return res.status(400).json({ error: "Too many albums." });
+    await prisma.$transaction(albumIds.map((albumId, position) =>
       prisma.albumMixItem.updateMany({ where: { mixId: req.params.id, albumId }, data: { position } })
     ));
     res.json({ ok: true });
