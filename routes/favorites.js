@@ -48,6 +48,13 @@ router.post("/:albumId", requireAuth, async (req, res, next) => {
       if (err.code === "P2002") return res.status(409).json({ error: "Already favorited." });
       throw err;
     }
+    // A top-3 album has obviously been listened to: mark it listened (this also
+    // moves it out of the queue). Removing it from the top 3 later leaves it listened.
+    await prisma.listenStatus.upsert({
+      where: { userId_albumId: { userId: req.userId, albumId } },
+      update: { status: "listened" },
+      create: { userId: req.userId, albumId, status: "listened" },
+    }).catch((err) => console.error("favorite -> listened error:", err.message));
     res.status(201).json({ favorite });
   } catch (e) { next(e); }
 });
