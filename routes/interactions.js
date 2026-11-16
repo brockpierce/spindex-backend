@@ -22,6 +22,8 @@ async function resolveOwnerId(id) {
   if (sr) return sr.userId;
   const qr = await prisma.qotdResponse.findUnique({ where: { id }, select: { userId: true } }).catch(() => null);
   if (qr) return qr.userId;
+  const rl = await prisma.relisten.findUnique({ where: { id }, select: { userId: true } }).catch(() => null);
+  if (rl) return rl.userId;
   return null;
 }
 
@@ -162,14 +164,15 @@ router.post("/comments/:reviewId", requireAuth, commentLimiter, async (req, res,
       return res.status(400).json({ error: "Comments can be at most 2000 characters." });
     }
 
-    // Allow comments on Review, TextPost, MixShare, and SongReview — look up all
+    // Allow comments on Review, TextPost, MixShare, SongReview, QotdResponse, and Relisten — look up all
     const review = await prisma.review.findUnique({ where: { id: reviewId } });
     const textPost = !review ? await prisma.textPost.findUnique({ where: { id: reviewId }, select: { id: true, userId: true } }) : null;
     const mixShare = !review && !textPost ? await prisma.mixShare.findUnique({ where: { id: reviewId }, select: { id: true, userId: true } }) : null;
     const songReview = !review && !textPost && !mixShare ? await prisma.songReview.findUnique({ where: { id: reviewId }, select: { id: true, userId: true } }).catch(() => null) : null;
     const qotdResponse = !review && !textPost && !mixShare && !songReview ? await prisma.qotdResponse.findUnique({ where: { id: reviewId }, select: { id: true, userId: true } }).catch(() => null) : null;
-    if (!review && !textPost && !mixShare && !songReview && !qotdResponse) return res.status(404).json({ error: "Post not found." });
-    const ownerId = review ? review.userId : (textPost ? textPost.userId : (mixShare ? mixShare.userId : (songReview ? songReview.userId : qotdResponse.userId)));
+    const relisten = !review && !textPost && !mixShare && !songReview && !qotdResponse ? await prisma.relisten.findUnique({ where: { id: reviewId }, select: { id: true, userId: true } }).catch(() => null) : null;
+    if (!review && !textPost && !mixShare && !songReview && !qotdResponse && !relisten) return res.status(404).json({ error: "Post not found." });
+    const ownerId = review ? review.userId : (textPost ? textPost.userId : (mixShare ? mixShare.userId : (songReview ? songReview.userId : (qotdResponse ? qotdResponse.userId : relisten.userId))));
 
     // A block (either direction) forbids commenting on that person's content.
     if (ownerId && ownerId !== req.userId && await isBlockedBetween(req.userId, ownerId)) {

@@ -98,6 +98,19 @@ router.patch("/item/:id", requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /api/relistens/item/:id — a single re-listen (public), so a notification
+// about a like/comment on it can open its thread.
+router.get("/item/:id", async (req, res, next) => {
+  try {
+    const rl = await prisma.relisten.findUnique({
+      where: { id: req.params.id },
+      include: { user: { select: { username: true } } },
+    });
+    if (!rl) return res.status(404).json({ error: "Re-listen not found." });
+    res.json({ relisten: { ...rl, username: rl.user.username, user: undefined } });
+  } catch (e) { next(e); }
+});
+
 // DELETE /api/relistens/item/:id — delete one of the current user's re-listens.
 router.delete("/item/:id", requireAuth, async (req, res, next) => {
   try {
@@ -105,7 +118,12 @@ router.delete("/item/:id", requireAuth, async (req, res, next) => {
     if (!existing || existing.userId !== req.userId) {
       return res.status(404).json({ error: "Re-listen not found." });
     }
-    await prisma.relisten.delete({ where: { id: req.params.id } });
+    // Reactions/comments key off a generic item id (no FK), so clear them too.
+    await prisma.$transaction([
+      prisma.reviewReaction.deleteMany({ where: { reviewId: req.params.id } }),
+      prisma.reviewComment.deleteMany({ where: { reviewId: req.params.id } }),
+      prisma.relisten.delete({ where: { id: req.params.id } }),
+    ]);
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
