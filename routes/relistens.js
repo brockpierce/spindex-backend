@@ -1,6 +1,7 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
 const { requireAuth } = require("../middleware/auth");
+const { itemTraceDeletes } = require("../lib/itemCleanup");
 
 const router = express.Router();
 
@@ -118,10 +119,10 @@ router.delete("/item/:id", requireAuth, async (req, res, next) => {
     if (!existing || existing.userId !== req.userId) {
       return res.status(404).json({ error: "Re-listen not found." });
     }
-    // Reactions/comments key off a generic item id (no FK), so clear them too.
+    // Reactions, comments and their notifications key off a generic item id
+    // (no FK), so clear them too.
     await prisma.$transaction([
-      prisma.reviewReaction.deleteMany({ where: { reviewId: req.params.id } }),
-      prisma.reviewComment.deleteMany({ where: { reviewId: req.params.id } }),
+      ...itemTraceDeletes([req.params.id]),
       prisma.relisten.delete({ where: { id: req.params.id } }),
     ]);
     res.json({ ok: true });
