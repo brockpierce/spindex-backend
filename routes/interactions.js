@@ -10,7 +10,8 @@ const commentLimiter = perUserLimiter({ windowMs: 60 * 1000, max: 30, message: "
 const router = express.Router();
 
 // Resolve the owner of a reactable/commentable target. `reviewId` is polymorphic
-// (Review, TextPost, MixShare, SongReview, or QotdResponse), so check each.
+// (Review, TextPost, MixShare, SongReview, QotdResponse, Relisten, or a
+// ReviewComment when liking a comment/reply), so check each.
 async function resolveOwnerId(id) {
   const review = await prisma.review.findUnique({ where: { id }, select: { userId: true } }).catch(() => null);
   if (review) return review.userId;
@@ -24,6 +25,8 @@ async function resolveOwnerId(id) {
   if (qr) return qr.userId;
   const rl = await prisma.relisten.findUnique({ where: { id }, select: { userId: true } }).catch(() => null);
   if (rl) return rl.userId;
+  const cm = await prisma.reviewComment.findUnique({ where: { id }, select: { userId: true } }).catch(() => null);
+  if (cm) return cm.userId;
   return null;
 }
 
@@ -82,8 +85,12 @@ router.put("/reactions/:reviewId", requireAuth, reactLimiter, async (req, res, n
       // song review or QOTD answer) — once per person per item, so toggling a
       // heart off and on doesn't send a fresh notification each time.
       try {
+        // Liking a comment: point the notification at the post it's on, so
+        // tapping it opens that thread (a bare comment id can't be opened).
+        const comment = await prisma.reviewComment.findUnique({ where: { id: reviewId }, select: { reviewId: true } }).catch(() => null);
+        const refId = comment ? comment.reviewId : reviewId;
         const notified = created && ownerId !== req.userId && await prisma.notification.findFirst({
-          where: { recipientId: ownerId, actorId: req.userId, type: "reaction", referenceId: reviewId },
+          where: { recipientId: ownerId, actorId: req.userId, type: "reaction", referenceId: refId },
           select: { id: true },
         });
         if (created && ownerId !== req.userId && !notified) {
@@ -92,7 +99,7 @@ router.put("/reactions/:reviewId", requireAuth, reactLimiter, async (req, res, n
               recipientId: ownerId,
               actorId: req.userId,
               type: "reaction",
-              referenceId: reviewId,
+              referenceId: refId,
             },
           });
         }
@@ -246,7 +253,11 @@ router.delete("/comments/:commentId", requireAuth, async (req, res, next) => {
     const comment = await prisma.reviewComment.findUnique({ where: { id: req.params.commentId } });
     if (!comment) return res.status(404).json({ error: "Comment not found." });
     if (comment.userId !== req.userId) return res.status(403).json({ error: "Not your comment." });
-    await prisma.reviewComment.deleteMany({ where: { id: req.params.commentId } });
+    await prisma.$transaction([
+      // Likes on a comment key off its id (no FK), so clear them with it.
+      prisma.reviewReaction.deleteMany({ where: { reviewId: req.params.commentId } }),
+      prisma.reviewComment.deleteMany({ where: { id: req.params.commentId } }),
+    ]);
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
